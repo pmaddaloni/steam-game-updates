@@ -1,16 +1,16 @@
 {
   "files": {
     "main.css": "/steam-game-updates/static/css/main.f9c205ef.css",
-    "main.js": "/steam-game-updates/static/js/main.04fde9e4.js",
+    "main.js": "/steam-game-updates/static/js/main.6fc3e797.js",
     "static/js/453.18f6b474.chunk.js": "/steam-game-updates/static/js/453.18f6b474.chunk.js",
     "static/media/logo.svg": "/steam-game-updates/static/media/logo.6ce24c58023cc2f8fd88fe9d219db6c6.svg",
     "index.html": "/steam-game-updates/index.html",
     "main.f9c205ef.css.map": "/steam-game-updates/static/css/main.f9c205ef.css.map",
-    "main.04fde9e4.js.map": "/steam-game-updates/static/js/main.04fde9e4.js.map",
+    "main.6fc3e797.js.map": "/steam-game-updates/static/js/main.6fc3e797.js.map",
     "453.18f6b474.chunk.js.map": "/steam-game-updates/static/js/453.18f6b474.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.f9c205ef.css",
-    "static/js/main.04fde9e4.js"
+    "static/js/main.6fc3e797.js"
   ]
 }

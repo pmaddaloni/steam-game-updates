@@ -1,20 +1,36 @@
 {
-  "name": "my-app",
+  "name": "steam-game-updates",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://pmaddaloni.github.io",
+  "proxy": "http://localhost:8080",
   "dependencies": {
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^13.5.0",
+    "axios": "^1.8.3",
+    "classnames": "^2.5.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "html-react-parser": "^5.2.3",
+    "mysql2": "^3.14.1",
+    "passport": "^0.7.0",
+    "passport-steam": "^1.0.18",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router": "^7.3.0",
     "react-scripts": "5.0.1",
     "sass": "^1.85.1",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "ws": "^8.18.2"
   },
   "scripts": {
+    "predeploy": "npm run build",
+    "add-domain": "echo \"steamgameupdates.info\" > build/CNAME",
+    "deploy": "npm run add-domain && gh-pages -d build",
+    "start-express": "node --max-http-header-size 16000 ./src/server/index.js",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
@@ -37,5 +53,9 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "gh-pages": "^6.3.0"
   }
 }

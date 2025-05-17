@@ -1,24 +1,16 @@
-import logo from './logo.svg';
 import './App.scss';
+import { AuthProvider } from './AuthContext.js';
+import Body from './body/AppBody.js';
+import Header from './header/Header.js';
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Giddy up!
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <AuthProvider>
+      <div className="App">
+        <Header />
+        <Body />
+      </div>
+    </AuthProvider>
   );
 }
 

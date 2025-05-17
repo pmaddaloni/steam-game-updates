@@ -1,0 +1,225 @@
+@use "../utilities/_variables" as vars;
+
+$margin: 0 30px;
+$padding: 20px;
+
+.app-body {
+    background-color: #282c34;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    // font-size: calc(10px + 2vmin);
+    color: white;
+    padding-top: vars.$header-height;
+
+    .loading-container {
+        margin: auto;
+    }
+}
+
+.container {
+    display: flex;
+    max-height: 100vh;
+    margin: 15px 0;
+
+    .update-container {
+        flex-grow: 1;
+        overflow-x: auto;
+        overflow-y: scroll;
+        min-width: 50vw;
+        max-height: 100vh;
+
+        .update {
+            size: 12px;
+            font-family: "Open Sans", sans-serif;
+            font-weight: 600;
+            color: #5fb4f0;
+        }
+
+    }
+}
+
+.container-header {
+    display: flex;
+    justify-content: space-around;
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    padding: 20px 0;
+    background-color: #282c34;
+
+    div {
+        padding: 0px 10px 0px 0px;
+    }
+}
+
+.game-capsule {
+    border-radius: 4px;
+}
+
+.update-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    overflow-x: auto;
+    margin: 0 30px 0 0;
+    padding: $padding;
+    background-color: #32414c;
+    border: rgb(128, 128, 128) 1px solid;
+    font-family: "Open Sans", ;
+    color: rgb(221, 221, 221);
+
+    a {
+        color: rgb(0, 175, 244);
+    }
+
+    details {
+        width: fit-content;
+        margin: 5px 0;
+        padding: 5px;
+        background-color: rgb(57, 73, 96);
+        border: rgb(128, 128, 128) 1px solid;
+    }
+
+    .update-header {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+
+        .update-title {
+            width: fit-content;
+            text-align: left;
+
+            .update-headline {
+                padding-bottom: 5px;
+                font-size: 18px;
+                font-weight: 800;
+            }
+
+            .update-post-time {
+                font-size: 12px;
+                font-weight: 600;
+            }
+        }
+    }
+
+    .update-divider {
+        opacity: 50%;
+        width: 100%;
+        height: 1px;
+        margin: 20px 0;
+        background-color: rgb(128, 128, 128);
+    }
+
+    .update-body {
+        align-self: flex-start;
+        text-align: left;
+
+        img {
+            max-width: 75%;
+        }
+    }
+}
+
+.game-list {
+    size: 12px;
+    overflow-y: scroll;
+    width: 35vw;
+    min-width: 500px;
+    max-height: 100vh;
+    font-family: "Open Sans", ;
+    font-weight: 600;
+    color: #5fb4f0;
+    text-align: left;
+
+    .game-list-header {
+        display: flex;
+        justify-content: space-around;
+        position: sticky;
+        z-index: 1;
+        top: 0;
+        padding: 20px 0;
+        background-color: #282c34;
+    }
+
+    .patch-date {
+        width: 150px;
+        margin-top: auto;
+        margin-bottom: auto;
+        text-align: center;
+    }
+
+    .game-title {
+        align-self: center;
+        width: fit-content;
+        padding-right: 0;
+    }
+
+    .patch-title {
+        width: 250px;
+        margin-top: auto;
+        margin-bottom: auto;
+        text-align: center;
+    }
+
+    .game {
+        display: flex;
+        justify-content: space-between;
+        min-width: 400px;
+        margin: $margin;
+        padding: 5px;
+        background-color: #32414c;
+        border: rgb(128, 128, 128) 1px solid;
+
+        .patch-date {
+            width: 150px;
+            margin-top: auto;
+            margin-bottom: auto;
+            text-align: center;
+        }
+
+        .game-title {
+            width: fit-content;
+            height: 59px;
+            padding-right: 0;
+        }
+
+        .patch-title {
+            width: 250px;
+            margin-top: auto;
+            margin-bottom: auto;
+            text-align: center;
+        }
+
+        &:hover {
+            transition: 500ms;
+            background-color: rgb(57, 73, 96);
+            border-color: white;
+        }
+
+        &:active {
+            transition: 500ms;
+            background-color: rgb(136, 152, 174);
+            border-color: white;
+        }
+
+        &.selected {
+            transition: 500ms;
+            background-color: rgb(73, 105, 149);
+            border-color: white;
+        }
+
+        #game-update {
+            flex-grow: 2;
+        }
+
+        & div {
+            padding: 0px 10px 0px 0px;
+        }
+
+        img {
+            width: 155px;
+        }
+    }
+}

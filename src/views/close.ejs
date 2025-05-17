@@ -1,0 +1,13 @@
+<script>
+    if ('<%= user %>') {
+        // localStorage.setItem('steam-game-updates-user', '<%- JSON.stringify(user) %>');
+    } else {
+        // localStorage.removeItem('steam-game-updates-user');
+    }
+
+    window.onload = function () {
+        setTimeout(function () {
+            window.close();
+        }, 500);
+    };
+</script>

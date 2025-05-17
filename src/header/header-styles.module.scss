@@ -1,0 +1,54 @@
+@use "../utilities/_variables" as vars;
+
+$menu-side-padding: 20px;
+
+.header {
+    color: #e4e4e4;
+    background-color: #32414c;
+    padding: 10px 0;
+    text-align: left;
+    vertical-align: middle;
+    height: vars.$header-height;
+    font-family: "Open Sans",
+        sans-serif;
+    size: 14px;
+    font-weight: 600;
+    color: #5fb4f0;
+    position: fixed;
+    transform: translateZ(0);
+    width: 100%;
+    z-index: 2;
+    backface-visibility: hidden;
+    display: flex;
+    justify-content: space-between;
+
+    div:first-child {
+        align-content: space-around;
+        padding-left: $menu-side-padding;
+    }
+
+    button.login,
+    .menu {
+        &:hover {
+            cursor: pointer;
+        }
+    }
+
+    .menu {
+        display: flex;
+        align-items: center;
+        padding-right: $menu-side-padding;
+
+        img {
+            margin-right: 7px;
+        }
+    }
+
+    button.login {
+        width: 160px;
+        height: 30px;
+        margin-right: $menu-side-padding;
+        background-image: url('./steam-sign-in.png');
+        background-size: 160px 30px;
+    }
+}

@@ -242,6 +242,7 @@ const getGameUpdates = async (externalGameID) => {
                     } else {
                         app.locals.allSteamGameIDsOrderedByUpdateTime.push([mostRecentUpdateTime, gameID]);
                     }
+                    // TODO: could optimize this to be a heap - I SHOULD!
                     app.locals.allSteamGameIDsOrderedByUpdateTime.sort((a, b) => b[0] - a[0]);
                 }
                 // Only increment the index if this was not a manual request.
@@ -251,10 +252,10 @@ const getGameUpdates = async (externalGameID) => {
                 // let clients know a new update has been processed
                 wss.clients.forEach(client => {
                     if (client.readyState === WebSocket.OPEN) {
-                        client.send({
+                        client.send(JSON.stringify({
                             appid: gameID,
                             events: app.locals.allSteamGamesUpdates[gameID],
-                        });
+                        }));
                     }
                 });
                 console.log(`Getting the game ${gameID}'s updates completed with ${result.events?.length} events`);
@@ -335,7 +336,7 @@ setInterval(() => {
 }, 1 * 60 * 1000);
 
 app.use(session({
-    secret: 'steam-game-updates-secret',
+    secret: process.env.STEAM_GAME_UPDATES_SECRET,
     name: 'steam-game-updates',
     resave: true,
     saveUninitialized: true

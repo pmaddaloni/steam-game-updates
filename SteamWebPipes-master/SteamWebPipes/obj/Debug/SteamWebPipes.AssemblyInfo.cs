@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SteamWebPipes")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b047eb0cad4f7f6347a8ea20eef703dd0de4a161")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0717aac39978e782c36175b5f467537c0d2adc13")]
 [assembly: System.Reflection.AssemblyProductAttribute("SteamWebPipes")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SteamWebPipes")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

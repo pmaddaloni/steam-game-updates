@@ -1,5 +1,6 @@
 import axios from 'axios';
-import React, { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
+import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
+import { webSocketConnectWithRetry } from '../utilities/utils.js';
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
@@ -25,8 +26,8 @@ const reducer = (state, { type, value }) => {
 
 let gameDetailsWorker = null;
 let gameUpdatesWorker = null;
-let steamGameUpdatesSocket = new WebSocket('ws://localhost:8081/');
-let steamWebPipesWebSocket = new WebSocket('http://localhost:8181/');
+let steamGameUpdatesSocket = new webSocketConnectWithRetry('ws://localhost:8081/');
+// let steamWebPipesWebSocket = new connectWithRetry('ws://localhost:8181/');
 
 
 export const AuthProvider = function ({ children }) {
@@ -34,22 +35,19 @@ export const AuthProvider = function ({ children }) {
 
     // Web worker and socket setup
     useEffect(() => {
-        steamWebPipesWebSocket.onmessage = (event) => {
-            const { Apps: apps } = JSON.parse(event.data);
-            if (apps == null) {
-                return;
-            }
-            const appids = Object.keys(apps);
-            for (const appid of appids) {
-                if (state.ownedGames[appid] != null) {
-                    gameUpdatesWorker.postMessage({ appid, name: state.ownedGames[appid].name });
-                }
-            }
-        };
-
         steamGameUpdatesSocket.onmessage = (event) => {
-            const { appid, events } = JSON.parse(event.data);
-            if (state.ownedGames[appid] != null) {
+            // One of two types of messages is being received here:
+            // 1. A map of apps that updated which was retrieved from Valve's PICS service
+            // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
+            const { appid, events, apps } = JSON.parse(event.data);
+            if (apps != null) {
+                const appids = Object.keys(apps);
+                for (const appid of appids) {
+                    if (state.ownedGames[appid] != null) {
+                        gameUpdatesWorker.postMessage({ appid, name: state.ownedGames[appid].name });
+                    }
+                }
+            } else if (state.ownedGames[appid] != null) {
                 dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name: state.ownedGames[appid].name, events } } });
                 dispatch({ type: 'updateGameUpdates', value: appid });
             }
@@ -84,7 +82,7 @@ export const AuthProvider = function ({ children }) {
             console.log("This browser doesn't support web workers.");
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [steamGameUpdatesSocket]);
 
     // Populate the context with what's already been stored in local storage.
     const checkLocalStorage = useCallback(() => {

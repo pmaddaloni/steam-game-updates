@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { execFile } from 'child_process';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
@@ -8,9 +9,18 @@ import { Strategy as SteamStrategy } from 'passport-steam';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
+import { webSocketConnectWithRetry } from '../utilities/utils.js';
 
 const __filename = fileURLToPath(import.meta.url);  // get the resolved path to the file
 const __dirname = path.dirname(__filename);         // get the name of the directory
+
+execFile(path.join(__dirname, '../../SteamWebPipes-master/SteamWebPipesExecutable'),
+    (error, stdout, _stderr) => {
+        if (error) {
+            throw error;
+        }
+        console.log(stdout);
+    });
 
 // move this to a child process
 // https://stackoverflow.com/questions/33030092/webworkers-with-a-node-js-express-application
@@ -18,11 +28,11 @@ async function getAllSteamGameNames() {
     return axios.get('https://api.steampowered.com/ISteamApps/GetAppList/v0002/').then((result) => {
         // disregard apps without a name
         let games = result.data.applist.apps.filter(app => app.name !== '').sort((a, b) => a.appid - b.appid);
-        // Remove duplicates by appid
+        // Remove appid duplicates that can be present in the returned list
         // This operation is slow, but having duplicate entries for a game could be worth it?
-        // games = Array.from(new Set(games.map(a => a.appid))).map(appid => {
-        //     return games.find(a => a.appid === appid)
-        // })
+        games = Array.from(new Set(games.map(a => a.appid))).map(appid => {
+            return games.find(a => a.appid === appid)
+        })
         console.log(`Server has retrieved all ${games.length} games`, games.slice(0, 30));
         return games;
     }).catch(err => {
@@ -120,21 +130,21 @@ passport.use(new SteamStrategy({
 ));
 
 // TODO: This can reach 1.7GB in size, so need to examine storing it in multuple files...
-const gameUpdatesFromFile =
-    fs.readFileSync(path.join(__dirname, './allSteamGamesUpdates.txt'), { encoding: 'utf8', flag: 'r' })
-    || '{}';    // {[appid]: events[]}
-const allSteamGamesUpdatesPossiblyChangedFromFile =
-    fs.readFileSync(path.join(__dirname, './allSteamGamesUpdatesPossiblyChanged.txt'), { encoding: 'utf8', flag: 'r' })
-    || '{}';    // {[appid]: POSSIBLE most recent update time}
-const gameIDsWithErrors =
-    fs.readFileSync(path.join(__dirname, './gameIDsWithErrors.txt'), { encoding: 'utf8', flag: 'r' })
-    || '[]';    // [appid]
-const gameIDsToCheckIndex =
-    fs.readFileSync(path.join(__dirname, './gameIDsToCheckIndex.txt'), { encoding: 'utf8', flag: 'r' })
-    || '0';     // For incrementing through ALL steam games - takes about 2.5 days at 100k requests/day
-const allSteamGameIDsOrderedByUpdateTime =
-    fs.readFileSync(path.join(__dirname, './allSteamGameIDsOrderedByUpdateTime.txt'), { encoding: 'utf8', flag: 'r' })
-    || '[]';    // [appid]
+const gameUpdatesFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdates.txt')) ?
+    fs.readFileSync(path.join(__dirname, './storage/allSteamGamesUpdates.txt'), { encoding: 'utf8', flag: 'r' })
+    : '{}';    // {[appid]: events[]}
+const allSteamGamesUpdatesPossiblyChangedFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.txt')) ?
+    fs.readFileSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.txt'), { encoding: 'utf8', flag: 'r' })
+    : '{}';    // {[appid]: POSSIBLE most recent update time}
+const gameIDsWithErrors = fs.existsSync(path.join(__dirname, './storage/gameIDsWithErrors.txt')) ?
+    fs.readFileSync(path.join(__dirname, './storage/gameIDsWithErrors.txt'), { encoding: 'utf8', flag: 'r' })
+    : '[]';    // [appid]
+const gameIDsToCheckIndex = fs.existsSync(path.join(__dirname, './storage/gameIDsToCheckIndex.txt')) ?
+    fs.readFileSync(path.join(__dirname, './storage/gameIDsToCheckIndex.txt'), { encoding: 'utf8', flag: 'r' })
+    : '0';     // For incrementing through ALL steam games - takes about 2.5 days at 100k requests/day
+const allSteamGameIDsOrderedByUpdateTime = fs.existsSync(path.join(__dirname, './storage/allSteamGameIDsOrderedByUpdateTime.txt')) ?
+    fs.readFileSync(path.join(__dirname, './storage/allSteamGameIDsOrderedByUpdateTime.txt'), { encoding: 'utf8', flag: 'r' })
+    : '[]';    // [appid]
 
 const app = express();
 app.locals.allSteamGames = await getAllSteamGameNames();
@@ -150,9 +160,20 @@ app.locals.dailyLimit = 1000;  // should be 100k, but for testing purposes it's 
 
 console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates).length} games with their updates.`);
 
+// START Steam Game Updates WebSocket connection
+const wss = new WebSocketServer({ port: 8081 });
+
+wss.on('connection', function connection(ws) {
+    console.log('WebSocket connection established with a client');
+    ws.on('error', console.error);
+    ws.on('close', () => {
+        console.log('Client disconnected');
+    });
+});
+// END Steam Game Updates WebSocket connection
+
 // SteamWebPipes WebSocket connection
-const targetWsUrl = 'ws://localhost:8181';
-const ws = new WebSocket(targetWsUrl);
+const ws = webSocketConnectWithRetry('ws://localhost:8181');
 
 ws.on('open', () => {
     console.log('Connected to SteamWebPipes server');
@@ -165,6 +186,14 @@ ws.on('message', (message) => {
     if (apps == null) {
         return;
     }
+    // broadcast the PICS update message to all connected clients
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({
+                apps
+            }));
+        }
+    });
     const appids = Object.keys(apps);
     for (const appid of appids) {
         app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime();
@@ -180,18 +209,6 @@ ws.on('error', (error) => {
 });
 // END SteamWebPipes WebSocket connection
 
-// START Steam Game Updates WebSocket connection
-const wss = new WebSocketServer({ port: 8081 });
-
-wss.on('connection', function connection(ws) {
-    console.log('WebSocket connection established with a client');
-    ws.on('error', console.error);
-    ws.on('close', () => {
-        console.log('Client disconnected');
-    });
-});
-// END Steam Game Updates WebSocket connection
-
 
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
@@ -201,13 +218,15 @@ setInterval(() => app.locals.dailyLimit = 100000, 1000 * 60 * 60 * 24);
 // At this point it's not cleared/guaranteed that the games will always come back in the
 // same order, but it appears to be the case, at least for now.
 setInterval(async () => {
+    console.log('Refreshing all games');
     if (app.locals.dailyLimit > 0 && app.locals.waitBeforeRetrying === false) {
-        const allGames = await getAllSteamGameNames();
-        app.locals.dailyLimit--;
-        app.locals.allSteamGames = allGames;
-        app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
+        getAllSteamGameNames().then(allGames => {
+            app.locals.dailyLimit--;
+            app.locals.allSteamGames = allGames;
+            app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
+        });
     }
-}, 15 * 60 * 1000)
+}, /* 15 * 60 *  */1000)
 
 const getGameUpdates = async (externalGameID) => {
     const priorityGameID = app.locals.gameIDsToCheckPriorityQueue.shift();

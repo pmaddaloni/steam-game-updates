@@ -1,4 +1,4 @@
-@use "../utilities/_variables" as vars;
+@use "../_variables" as vars;
 
 $margin: 0 30px;
 $padding: 20px;
@@ -8,6 +8,8 @@ $padding: 20px;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    font-family: "Open Sans",
+        sans-serif;
     // font-size: calc(10px + 2vmin);
     color: white;
     padding-top: vars.$header-height;

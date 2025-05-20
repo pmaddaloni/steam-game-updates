@@ -224,11 +224,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "/Users/paulmaddaloni/Downloads/SteamWebPipes-master/SteamWebPipes/SteamWebPipes.csproj",
+      "projectUniqueName": "/Users/paulmaddaloni/Documents/Projects/steam-game-updates/SteamWebPipes-master/SteamWebPipes/SteamWebPipes.csproj",
       "projectName": "SteamWebPipes",
-      "projectPath": "/Users/paulmaddaloni/Downloads/SteamWebPipes-master/SteamWebPipes/SteamWebPipes.csproj",
+      "projectPath": "/Users/paulmaddaloni/Documents/Projects/steam-game-updates/SteamWebPipes-master/SteamWebPipes/SteamWebPipes.csproj",
       "packagesPath": "/Users/paulmaddaloni/.nuget/packages/",
-      "outputPath": "/Users/paulmaddaloni/Downloads/SteamWebPipes-master/SteamWebPipes/obj/",
+      "outputPath": "/Users/paulmaddaloni/Documents/Projects/steam-game-updates/SteamWebPipes-master/SteamWebPipes/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "/Users/paulmaddaloni/.nuget/NuGet/NuGet.Config"

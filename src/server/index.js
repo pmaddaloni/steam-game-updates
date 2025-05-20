@@ -113,7 +113,7 @@ passport.deserializeUser(function (obj, done) {
 passport.use(new SteamStrategy({
     returnURL: 'http://localhost:8080/auth/steam/return',
     realm: 'http://localhost:8080/',
-    apiKey: '***REMOVED_API_KEY***'
+    apiKey: process.env.STEAM_API_KEY
 },
     function (identifier, profile, done) {
         // asynchronous verification, for effect...
@@ -405,7 +405,7 @@ app.get('/api/user', (req, res) => {
 app.get('/api/owned-games', async (req, res) => {
     // if (req.app.locals.waitBeforeRetrying === false && req.app.locals.dailyLimit > 0) {
     let result = '';
-    await axios.get(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=***REMOVED_API_KEY***&steamid=${req.query.id}`)
+    await axios.get(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${process.env.STEAM_API_KEY}&steamid=${req.query.id}`)
         .then(response => result = response)
         .catch(err => console.error(`Getting the user ${req.query.id}'s owned games failed.`, err));
     res.send(result.data?.response);

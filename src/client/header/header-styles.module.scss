@@ -27,10 +27,63 @@ $menu-side-padding: 20px;
         padding-left: $menu-side-padding;
     }
 
+    button.refreshGames {
+        cursor: pointer;
+        background: transparent;
+        box-shadow: none;
+        padding: 6px 12px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #5fb4f0;
+        white-space: nowrap;
+        vertical-align: middle;
+        border: 1px solid #5fb4f0;
+        border-radius: 6px;
+        user-select: none;
+        appearance: none;
+
+        &:hover {
+            background-color: #5fb4f0;
+            color: #fff;
+            transition: all 0.2s ease-in-out;
+        }
+
+        &:active {
+            background-color: #b8daf3;
+            color: #8e7f7f;
+            transition: all 0.2s ease-in-out;
+        }
+    }
+
     button.login,
     .menu {
+
+        .user {
+            width: 140px;
+            opacity: 100%;
+            transition: opacity 200ms;
+        }
+
+        .logout {
+            opacity: 0;
+            margin-left: -140px;
+            z-index: 1;
+            width: 140px;
+        }
+
         &:hover {
             cursor: pointer;
+
+            .user {
+                visibility: hidden;
+                margin-right: 0;
+            }
+
+            .logout {
+                opacity: 100;
+                transition: 200ms;
+                z-index: 2;
+            }
         }
     }
 

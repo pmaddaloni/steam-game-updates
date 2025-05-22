@@ -9,12 +9,13 @@ import { Strategy as SteamStrategy } from 'passport-steam';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
-import { webSocketConnectWithRetry } from '../utilities/utils.js';
+import config from '../../config.js';
+import { PriorityQueue, webSocketConnectWithRetry } from '../utilities/utils.js';
 
 const __filename = fileURLToPath(import.meta.url);  // get the resolved path to the file
 const __dirname = path.dirname(__filename);         // get the name of the directory
 
-execFile(path.join(__dirname, '../../SteamWebPipes-master/SteamWebPipesExecutable'),
+execFile(path.join(__dirname, '../../SteamWebPipes-master/bin/SteamWebPipes'),
     (error, stdout, _stderr) => {
         if (error) {
             throw error;
@@ -27,13 +28,19 @@ execFile(path.join(__dirname, '../../SteamWebPipes-master/SteamWebPipesExecutabl
 async function getAllSteamGameNames() {
     return axios.get('https://api.steampowered.com/ISteamApps/GetAppList/v0002/').then((result) => {
         // disregard apps without a name
-        let games = result.data.applist.apps.filter(app => app.name !== '').sort((a, b) => a.appid - b.appid);
+        let games = result.data.applist.apps.filter(app => app.name !== '');//.sort((a, b) => a.appid - b.appid);
+        const gameHash = games.reduce((acc, game) => {
+            acc[game.appid] = game.name;
+            return acc;
+        }, {});
         // Remove appid duplicates that can be present in the returned list
-        // This operation is slow, but having duplicate entries for a game could be worth it?
-        games = Array.from(new Set(games.map(a => a.appid))).map(appid => {
-            return games.find(a => a.appid === appid)
-        })
-        console.log(`Server has retrieved all ${games.length} games`, games.slice(0, 30));
+        // This isn't ideal but it appears to be the most efficient way to do this...
+        games = Array.from(new Set(games.map(a => a.appid)));
+        games = games.map((appid) => ({
+            appid,
+            name: gameHash[appid]
+        }));
+        console.log(`Server has retrieved ${games.length} games`);
         return games;
     }).catch(err => {
         console.error('Retrieving all games from Steam API failed.', err);
@@ -113,7 +120,7 @@ passport.deserializeUser(function (obj, done) {
 passport.use(new SteamStrategy({
     returnURL: 'http://localhost:8080/auth/steam/return',
     realm: 'http://localhost:8080/',
-    apiKey: process.env.STEAM_API_KEY
+    apiKey: config.STEAM_API_KEY
 },
     function (identifier, profile, done) {
         // asynchronous verification, for effect...
@@ -152,7 +159,7 @@ app.locals.allSteamGamesUpdates = JSON.parse(gameUpdatesFromFile);
 app.locals.allSteamGameIDsOrderedByUpdateTime = JSON.parse(allSteamGameIDsOrderedByUpdateTime);
 app.locals.allSteamGamesUpdatesPossiblyChanged = JSON.parse(allSteamGamesUpdatesPossiblyChangedFromFile);
 app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
-app.locals.gameIDsToCheckPriorityQueue = [];
+app.locals.gameIDsToCheckPriorityQueue = new PriorityQueue();
 app.locals.gameIDsToCheckIndex = parseInt(gameIDsToCheckIndex, 10);
 app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
 app.locals.waitBeforeRetrying = false;
@@ -173,7 +180,11 @@ wss.on('connection', function connection(ws) {
 // END Steam Game Updates WebSocket connection
 
 // SteamWebPipes WebSocket connection
-const ws = webSocketConnectWithRetry('ws://localhost:8181');
+let ws = null;
+do {
+    console.log('Connecting to SteamWebPipes server...');
+    ws = webSocketConnectWithRetry('ws://localhost:8181', 3000, 'server');
+} while (ws == null);
 
 ws.on('open', () => {
     console.log('Connected to SteamWebPipes server');
@@ -226,14 +237,16 @@ setInterval(async () => {
             app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
         });
     }
-}, /* 15 * 60 *  */1000)
+}, 15 * 60 * 1000)
 
 const getGameUpdates = async (externalGameID) => {
-    const priorityGameID = app.locals.gameIDsToCheckPriorityQueue.shift();
-    const gameID = externalGameID || priorityGameID
-        || app.locals.gameIDsToCheck[app.locals.gameIDsToCheckIndex];
     if (app.locals.dailyLimit > 0
         && app.locals.waitBeforeRetrying === false) {
+
+        const priorityGameID = app.locals.gameIDsToCheckPriorityQueue.dequeue();
+        console.log('Priority gameID:', priorityGameID, app.locals.gameIDsToCheckPriorityQueue.size());
+        const gameID = externalGameID ?? priorityGameID
+            ?? app.locals.gameIDsToCheck[app.locals.gameIDsToCheckIndex];
 
         // Skip the gameID if it has already been checked and failed, and this wasn't a manual request.
         if (app.locals.gameIDsWithErrors.has(gameID) && !externalGameID && !priorityGameID) {
@@ -246,10 +259,12 @@ const getGameUpdates = async (externalGameID) => {
                 // For now, just keep track of the most recent 10 updates
                 app.locals.allSteamGamesUpdates[gameID] =
                     result.events.slice(0, 10).map(event => event.announcement_body);
-                // app.locals.allSteamGameIDsOrderedByUpdateTime
+
                 let mostRecentUpdateTime = app.locals.allSteamGamesUpdates[gameID][0]?.posttime;
                 if (mostRecentUpdateTime != null) {
-                    if (app.locals.allSteamGameIDsOrderedByUpdateTime[mostRecentUpdateTime] != null) {
+                    if (app.locals.allSteamGameIDsOrderedByUpdateTime.includes(
+                        ([updateTime]) => updateTime === mostRecentUpdateTime
+                    )) {
                         // Handle the very very rare case where two games have the exact same update time
                         mostRecentUpdateTime++;
                     }
@@ -265,7 +280,7 @@ const getGameUpdates = async (externalGameID) => {
                     app.locals.allSteamGameIDsOrderedByUpdateTime.sort((a, b) => b[0] - a[0]);
                 }
                 // Only increment the index if this was not a manual request.
-                if (externalGameID == null) {
+                if (externalGameID == null && priorityGameID == null) {
                     app.locals.gameIDsToCheckIndex++;
                 }
                 // let clients know a new update has been processed
@@ -274,10 +289,11 @@ const getGameUpdates = async (externalGameID) => {
                         client.send(JSON.stringify({
                             appid: gameID,
                             events: app.locals.allSteamGamesUpdates[gameID],
+                            mostRecentUpdateTime
                         }));
                     }
                 });
-                console.log(`Getting the game ${gameID}'s updates completed with ${result.events?.length} events`);
+                console.log(`Getting the game ${gameID}'s updates completed with ${app.locals.allSteamGamesUpdates[gameID].length} events`);
             } else if (result.status === 429 || result.status === 403) {
                 app.locals.waitBeforeRetrying = true;
                 setTimeout(() => app.locals.waitBeforeRetrying = false, result.retryAfter * 1000);
@@ -306,8 +322,8 @@ const getGameUpdates = async (externalGameID) => {
 // Continuously fetch game's updates every 1 second iterating over the gameIDsToCheck array.
 // Constraint of 100000k allows for an average of one request every 0.86 seconds over 24 hours.
 // Constraint of 200 per 5 minutes restricts to no more than one request every 1.5 seconds within any 5 - minute window.
-// We go with 1.6 seconds to be on the safe side.
-setInterval(getGameUpdates, 1 * 1600);
+// We go with 1.6 seconds to be on the safe side and build in a little wiggle room for other requests.
+setInterval(getGameUpdates, 1000 * 1.6);
 
 // Save the results every 5 minutes so we don't lose them if the server restarts/crashes.
 // Write to file for now, but future optimization could be to use something like mongo db.
@@ -355,7 +371,7 @@ setInterval(() => {
 }, 1 * 60 * 1000);
 
 app.use(session({
-    secret: process.env.STEAM_GAME_UPDATES_SECRET,
+    secret: config.STEAM_GAME_UPDATES_SECRET,
     name: 'steam-game-updates',
     resave: true,
     saveUninitialized: true
@@ -403,19 +419,27 @@ app.get('/api/user', (req, res) => {
 });
 
 app.get('/api/owned-games', async (req, res) => {
-    // if (req.app.locals.waitBeforeRetrying === false && req.app.locals.dailyLimit > 0) {
-    let result = '';
-    await axios.get(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${process.env.STEAM_API_KEY}&steamid=${req.query.id}`)
-        .then(response => result = response)
-        .catch(err => console.error(`Getting the user ${req.query.id}'s owned games failed.`, err));
-    res.send(result.data?.response);
-    // } else {
-    //     res.status(400).send(new Error(`The limit for requests has been reached: retry later ${req.app.locals.waitBeforeRetrying}, daily limit ${req.app.locals.dailyLimit}`));
-    // }
+    if (req.app.locals.waitBeforeRetrying === false && req.app.locals.dailyLimit > 0) {
+        let result = '';
+        await axios.get(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${config.STEAM_API_KEY}&steamid=${req.query.id}`)
+            .then(response => result = response)
+            .catch(err => {
+                console.error(`\nGetting the user ${req.query.id}'s owned games FAILED with code "${err.response?.status}" - no code means the server didn't responsd.\n`, err);
+                setTimeout(() => app.locals.waitBeforeRetrying = false, result.retryAfter * 1000);
+            });
+        console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count} games`);
+        res.send(result.data?.response);
+    } else {
+        res.status(400).send(new Error(`The limit for requests has been reached: retry later ${req.app.locals.waitBeforeRetrying}, daily limit ${req.app.locals.dailyLimit}`));
+    }
     app.locals.dailyLimit--;
 });
 
 app.get('/api/all-steam-games', async (req, res) => {
+    res.send(req.app.locals.allSteamGames);
+});
+
+app.get('/api/update-queue', async (req, res) => {
     res.send(req.app.locals.allSteamGames);
 });
 
@@ -435,14 +459,12 @@ app.get('/api/game-updates-for-owned-games', async (req, res) => {
     const gameIDs = Object.values(req.query.appids ?? {}).map(gameID => parseInt(gameID, 10));
     const updates = []; // An array of {appid: gameID, events: []} in order of most recently updated
 
-    // iterate through all passed in games and add them if found
+    // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
-        // The gameID is the second element in the array
-        const [updateTime] = app.locals.allSteamGameIDsOrderedByUpdateTime.find(([, appid]) => gameID === appid) ?? [];
-        let mostRecentUpdateTime = updateTime;
-        if (updateTime == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > updateTime) {
-            app.locals.gameIDsToCheckPriorityQueue.push(gameID);
-            console.log(`Game ${gameID} has been added to the priority queue for updates.`);
+        // (The gameID is the second element in the array)
+        const [mostRecentUpdateTime] = app.locals.allSteamGameIDsOrderedByUpdateTime.find(([, appid]) => gameID === appid) ?? [];
+        if (mostRecentUpdateTime == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > mostRecentUpdateTime) {
+            app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID);
         } else {
             updates.push(
                 {
@@ -463,10 +485,10 @@ app.get('/api/steam-game-details', async (req, res) => {
             .then(response => result = response)
             .catch(err => console.error(`Getting the game ${req.query.id}'s details failed.`, err));
         res.send(result.data);
+        app.locals.dailyLimit--;
     } else {
         res.status(400).send(new Error(`The limit for requests has been reached: retry later ${req.app.locals.waitBeforeRetrying}, daily limit ${req.app.locals.dailyLimit}`));
     }
-    app.locals.dailyLimit--;
 });
 
 app.get('/logout', function (req, res) {

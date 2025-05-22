@@ -29,17 +29,17 @@ export default function Body() {
     // const [prevLength, setPrevLength] = useState(0);
     // const [isLoading, setIsLoading] = useState(false);
     // const fechMoreUpdatesThrottled = useMemo(() => throttle(fetchMoreUpdates), [fetchMoreUpdates]);
-
+    console.log('APP BODY', gameUpdates.length, Object.keys(ownedGames).length);
     const gameComponents = useMemo(() => {
         const shownEvents = {};     // {[appid]: # of times it's in the list}
-        return gameUpdates.map((appid, index) => {
+        return gameUpdates.map(([, appid], index) => {
             const { events } = ownedGames[appid] ?? {};
-            if (events != null) {
+            if (events != null && events.length > 0) {
                 shownEvents[appid] = (shownEvents[appid] ?? -1) + 1
                 const update = events[shownEvents[appid]];
                 return update && (
                     <GameUpdateListComponent
-                        key={update?.posttime}
+                        key={appid + '-' + update?.posttime}
                         appid={appid}
                         update={update}
                         setSelectedGame={setSelectedGame}
@@ -58,6 +58,12 @@ export default function Body() {
         setDisplayedItems([...gameComponents.slice(0, itemsPerPage)]);
         setStartIndex(itemsPerPage);
     }, [gameComponents]);
+
+    useEffect(() => {
+        if (gameUpdates.length === 0) {
+            setSelectedGame(null);
+        }
+    }, [gameUpdates]);
 
     // useEffect(() => {
     //     if (gameUpdates.length !== prevLength) {
@@ -90,9 +96,10 @@ export default function Body() {
                 const update = ownedGames[appid].events[eventIndex];
                 setSelectedGame({ appid, update, index });
                 const item = document.getElementById(`${appid}${update.posttime}`)
+                console.log('item', item);
                 item?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'center',
+                    behavior: 'auto',
+                    block: 'start',
                 })
             }
         };
@@ -105,8 +112,8 @@ export default function Body() {
             showCursor();
             clearTimeout(timeoutId);
         })
-
         window.addEventListener('keydown', handleKeyDown);
+
         return () => {
             document.removeEventListener('mousemove', showCursor);
             window.removeEventListener('keydown', handleKeyDown);

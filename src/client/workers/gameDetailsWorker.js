@@ -5,7 +5,7 @@ async function getMostRecentUpdates(ownedGames) {
     const gameIDsToBeFetchedSize = 500; // Break up a person's library into chunks of 500 so as not to overwhelm the API
 
     try {
-        let gameUpdatesTimes = [];
+        let gameUpdateTimes = [];
         do {
             const gameIDsToBeFetched = gameIDs
                 .splice(0, gameIDsToBeFetchedSize);
@@ -16,7 +16,7 @@ async function getMostRecentUpdates(ownedGames) {
                     params: { appids: gameIDsToBeFetched, },
                     paramsSerializer: { indexes: true }     // i.e. use brackets with indexes
                 });
-            const { updates, /* page */ } = result.data;
+            const { updates } = result.data;
             const filteredUpdates = updates.filter(({ mostRecentUpdateTime }) => mostRecentUpdateTime != null)
             // An array of {appid: gameID, events: []} in order of updates is returned
             // Remove the appids in the result from the gameIDs for pagination purposes
@@ -25,12 +25,12 @@ async function getMostRecentUpdates(ownedGames) {
             for (const { appid: gameID, events, mostRecentUpdateTime } of filteredUpdates) {
                 if (events) {
                     ownedGames[gameID].events = events;
-                    gameUpdatesTimes.push([mostRecentUpdateTime, gameID]);
+                    gameUpdateTimes.push([mostRecentUpdateTime, gameID]);
                 }
             }
         } while (gameIDs.length > 0)
-        gameUpdatesTimes = gameUpdatesTimes.sort((a, b) => b[0] - a[0]);
-        return { ownedGamesWithUpdates: ownedGames, gameUpdatesIDs: gameUpdatesTimes.map(([, appid]) => appid) };
+        gameUpdateTimes = gameUpdateTimes.sort((a, b) => b[0] - a[0]);
+        return { ownedGamesWithUpdates: ownedGames, gameUpdatesIDs: gameUpdateTimes };
     } catch (err) {
         return { err };
     }

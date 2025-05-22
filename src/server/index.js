@@ -332,35 +332,35 @@ setInterval(() => {
     // the same data over and over again.
     // TODO: Optimization -> save once after the daily limit is reached, THEN stop.
     if (app.locals.dailyLimit !== 0) {
-        fs.writeFile(path.join(__dirname, './allSteamGamesUpdates.txt'), JSON.stringify(app.locals.allSteamGamesUpdates), (err) => {
+        fs.writeFile(path.join(__dirname, './storage/allSteamGamesUpdates.txt'), JSON.stringify(app.locals.allSteamGamesUpdates), (err) => {
             if (err) {
                 console.error('Error writing to file allSteamGamesUpdates.txt', err);
             } else {
                 console.log('File `allSteamGamesUpdates.txt` written successfully');
             }
         });
-        fs.writeFile(path.join(__dirname, './gameIDsWithErrors.txt'), JSON.stringify(Array.from(app.locals.gameIDsWithErrors)), (err) => {
+        fs.writeFile(path.join(__dirname, './storage/gameIDsWithErrors.txt'), JSON.stringify(Array.from(app.locals.gameIDsWithErrors)), (err) => {
             if (err) {
                 console.error('Error writing to file gameIDsWithErrors.txt', err);
             } else {
                 console.log('File `gameIDsWithErrors.txt` written successfully');
             }
         });
-        fs.writeFile(path.join(__dirname, './gameIDsToCheckIndex.txt'), app.locals.gameIDsToCheckIndex.toString(), (err) => {
+        fs.writeFile(path.join(__dirname, './storage/gameIDsToCheckIndex.txt'), app.locals.gameIDsToCheckIndex.toString(), (err) => {
             if (err) {
                 console.error('Error writing to file gameIDsToCheckIndex.txt', err);
             } else {
                 console.log('File `gameIDsToCheckIndex.txt` written successfully');
             }
         });
-        fs.writeFile(path.join(__dirname, './allSteamGameIDsOrderedByUpdateTime.txt'), JSON.stringify(app.locals.allSteamGameIDsOrderedByUpdateTime), (err) => {
+        fs.writeFile(path.join(__dirname, './storage/allSteamGameIDsOrderedByUpdateTime.txt'), JSON.stringify(app.locals.allSteamGameIDsOrderedByUpdateTime), (err) => {
             if (err) {
                 console.error('Error writing to file allSteamGameIDsOrderedByUpdateTime.txt', err);
             } else {
                 console.log('File `allSteamGameIDsOrderedByUpdateTime.txt` written successfully');
             }
         });
-        fs.writeFile(path.join(__dirname, './allSteamGamesUpdatesPossiblyChanged.txt'), JSON.stringify(app.locals.allSteamGamesUpdatesPossiblyChanged), (err) => {
+        fs.writeFile(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.txt'), JSON.stringify(app.locals.allSteamGamesUpdatesPossiblyChanged), (err) => {
             if (err) {
                 console.error('Error writing to file allSteamGamesUpdatesPossiblyChanged.txt', err);
             } else {

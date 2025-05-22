@@ -39,12 +39,18 @@ export default function Header() {
     return (
         <div className={styles.header}>
             <div>Steam Game Updates</div>
+            <button className={styles.refreshGames} onClick={() => {
+                dispatch({ type: 'refreshGames' })
+            }
+            }>Refresh Games</button>
             {userID !== '' ?
                 <div className={styles.menu} >
                     <img src={photos[0]?.value} alt='user-avatar' />
-                    <div onClick={logout}>{displayName}</div>
+                    <div className={styles.user} onClick={logout}>{displayName}</div>
+                    <div className={styles.logout} onClick={logout}>Logout?</div>
                 </div>
-                : <button className={styles.login} onClick={login} />}
+                : <button className={styles.login} onClick={login} />
+            }
         </div>
     );
 }

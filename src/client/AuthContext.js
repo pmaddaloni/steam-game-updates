@@ -11,15 +11,26 @@ const defaultState = {
     provider: '',
     photos: [],
     ownedGames: {},     // { [appid]: {name, events} }
-    gameUpdates: []     // [ appid, ... ]
+    gameUpdates: []     // [ [updateTime, appid], ... ]
 };
 
 const reducer = (state, { type, value }) => {
     switch (type) {
         case 'login': return { ...state, ...value };
         case 'logout': return defaultState;
-        case 'updateOwnedGames': return { ...state, ownedGames: { ...value } };
-        case 'updateGameUpdates': return { ...state, gameUpdates: [].concat(value).concat(state.gameUpdates) };
+        case 'refreshGames':
+            return { ...state, ownedGames: {}, gameUpdates: [] };
+        case 'addOwnedGamesEvents':
+            const newOwnedGames = { ...state.ownedGames, ...value };
+            localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(newOwnedGames));
+            return { ...state, ownedGames: newOwnedGames };
+        case 'updateOwnedGames':
+            localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(value));
+            return { ...state, ownedGames: { ...value } };
+        case 'updateGameUpdates':
+            let newGameUpdates = state.gameUpdates.concat(value);
+            newGameUpdates = newGameUpdates.sort((a, b) => b[0] - a[0]);
+            return { ...state, gameUpdates: newGameUpdates };
         default: return state;
     };
 };
@@ -27,7 +38,7 @@ const reducer = (state, { type, value }) => {
 let gameDetailsWorker = null;
 let gameUpdatesWorker = null;
 let steamGameUpdatesSocket = new webSocketConnectWithRetry('ws://localhost:8081/');
-// let steamWebPipesWebSocket = new connectWithRetry('ws://localhost:8181/');
+// let steamWebPipesWebSocket = new webSocketConnectWithRetry('ws://localhost:8181/');
 
 
 export const AuthProvider = function ({ children }) {
@@ -35,11 +46,14 @@ export const AuthProvider = function ({ children }) {
 
     // Web worker and socket setup
     useEffect(() => {
+        // steamWebPipesWebSocket.onmessage = (event) => {
+        //     console.log(event.data);
+        // }
         steamGameUpdatesSocket.onmessage = (event) => {
             // One of two types of messages is being received here:
             // 1. A map of apps that updated which was retrieved from Valve's PICS service
             // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
-            const { appid, events, apps } = JSON.parse(event.data);
+            const { /* appid, events, mostRecentUpdateTime,  */apps } = JSON.parse(event.data);
             if (apps != null) {
                 const appids = Object.keys(apps);
                 for (const appid of appids) {
@@ -47,10 +61,13 @@ export const AuthProvider = function ({ children }) {
                         gameUpdatesWorker.postMessage({ appid, name: state.ownedGames[appid].name });
                     }
                 }
-            } else if (state.ownedGames[appid] != null) {
-                dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name: state.ownedGames[appid].name, events } } });
-                dispatch({ type: 'updateGameUpdates', value: appid });
             }
+            // If this is enabled, the list updates in real time.
+            // The issue is that the list shifts around when a new game is added, which isn't ideal.
+            /*  else if (state.ownedGames[appid] != null && events?.length > 0) {
+                dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name: state.ownedGames[appid].name, events } } });
+                dispatch({ type: 'updateGameUpdates', value: [[mostRecentUpdateTime, appid]] });
+            } */
         }
 
         if (window.Worker) {
@@ -81,8 +98,7 @@ export const AuthProvider = function ({ children }) {
         } else {
             console.log("This browser doesn't support web workers.");
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [steamGameUpdatesSocket]);
+    }, [state.ownedGames]);
 
     // Populate the context with what's already been stored in local storage.
     const checkLocalStorage = useCallback(() => {
@@ -95,7 +111,7 @@ export const AuthProvider = function ({ children }) {
         }
     }, [dispatch]);
 
-    const getAllUserOwnedGames = async (userID) => {
+    const getAllUserOwnedGames = async (userID = state.id) => {
         const result = await axios.get('api/owned-games', { params: { id: userID } })
         if (result != null) {
             const ownedGames = result?.data?.games?.reduce((acc, game) => {
@@ -103,8 +119,11 @@ export const AuthProvider = function ({ children }) {
                 return { ...acc, [game.appid]: {} }
             }, {});
             return ownedGames;
-        }
-    };
+        } else {
+            const ownedGames = localStorage.getItem('steam-game-updates-ownedGames');
+            return ownedGames && JSON.parse(ownedGames);
+        };
+    }
 
     const fetchMoreUpdates = useCallback(() => {
         gameDetailsWorker.postMessage(state.ownedGames);;
@@ -118,11 +137,16 @@ export const AuthProvider = function ({ children }) {
     useEffect(() => {
         if (state.id && Object.keys(state.ownedGames).length === 0) {
             (async () => {
-                // First grab all a user's owned games
-                const ownedGames = await getAllUserOwnedGames(state.id);
-                // Then send the owned games to the worker to get their names
-                if (ownedGames) {
-                    gameDetailsWorker.postMessage(ownedGames);
+                // First grab all of a user's owned games
+                try {
+                    const ownedGames = await getAllUserOwnedGames();
+
+                    // Then send the owned games to the worker to get their names
+                    if (ownedGames) {
+                        gameDetailsWorker.postMessage(ownedGames);
+                    }
+                } catch (err) {
+                    console.error('Getting owned games failed.', err);
                 }
             })();
         }
@@ -132,7 +156,7 @@ export const AuthProvider = function ({ children }) {
     window.state = state;
 
     return <AuthContext.Provider
-        value={{ ...state, fetchMoreUpdates, dispatch }}
+        value={{ ...state, fetchMoreUpdates, getAllUserOwnedGames, dispatch }}
     >
         {children}
     </AuthContext.Provider>

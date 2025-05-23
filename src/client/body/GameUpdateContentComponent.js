@@ -37,15 +37,15 @@ function formatTextToHtml(text) {
                     html += '</ol>';
                 } else if (word === '[*]') {
                     html += '<li>';
-                } else if (word === '[h1]') {
+                } else if (word.startsWith('[h1')) {
                     html += '<h1>';
                 } else if (word === '[/h1]') {
                     html += '</h1>';
-                } else if (word === '[h2]') {
+                } else if (word.startsWith('[h2')) {
                     html += '<h2>';
                 } else if (word === '[/h2]') {
                     html += '</h2>';
-                } else if (word === '[h3]') {
+                } else if (word.startsWith('[h3')) {
                     html += '<h3>';
                 } else if (word === '[/h3]') {
                     html += '</h3>';
@@ -54,6 +54,13 @@ function formatTextToHtml(text) {
                     html += '<a href="' + url + '" target="_blank" rel="noopener noreferrer">';
                 } else if (word === '[/url]') {
                     html += '</a>';
+                } else if (word.startsWith('[previewyoutube=')) {
+                    const youtubeVideoID = word.slice(16, -1);
+                    const url = 'https://www.youtube.com/embed/' + youtubeVideoID;
+                    html += '<div style="text-align-last:center"><iframe width="600" height="338" src="'
+                        + url + '" frameborder="0" allowfullscreen></iframe>';
+                } else if (word.startsWith('[/previewyoutube]')) {
+                    html += '</div>';
                 } else if (word === '[img]') {
                     isImage = true;
                     html += '<img src=';
@@ -86,11 +93,14 @@ function formatTextToHtml(text) {
 };
 
 export default function GameUpdateContentComponent({ appid, update }) {
+    const patchNotesURL = `https://steamcommunity.com/games/${appid}/announcements/detail/${update.gid}`
     return (
         <>
             <div className={styles['update-header']}>
                 <div className={styles['update-title']}>
-                    <div className={styles['update-headline']}>{update?.headline}</div>
+                    <div className={styles['update-headline']}>
+                        <a href={patchNotesURL} target="_blank" rel="noreferrer" >{update?.headline}</a>
+                    </div>
                     <div className={styles['update-post-time']} >
                         <span>Posted on </span>
                         <span>{new Date(update.posttime * 1000).toLocaleDateString()}</span>

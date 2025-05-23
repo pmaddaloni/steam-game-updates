@@ -1,8 +1,7 @@
-import classNames from 'classnames';
 import styles from './body-styles.module.scss';
 
 export default function GameUpdateListComponent(props) {
-    const { appid, update, selectedGame, setSelectedGame, index } = props;
+    const { appid, update, setSelectedGame, index } = props;
     const changeSelectedGame = () => {
         setSelectedGame({ appid, update, index });
     };
@@ -10,11 +9,10 @@ export default function GameUpdateListComponent(props) {
     return (
         <>
             <div
-                data-index={index}
-                id={`${appid}${update.posttime}`}
+                id={index}
                 key={`${appid}-${index}`}
                 onClick={changeSelectedGame}
-                className={classNames(styles.game, selectedGame?.index === index ? styles.selected : '')}
+                className={styles.game}
             >
                 <div className={styles['patch-date']}>
                     <div>{new Date(update.posttime * 1000).toLocaleDateString()}</div>

@@ -29,7 +29,6 @@ export default function Body() {
     // const [prevLength, setPrevLength] = useState(0);
     // const [isLoading, setIsLoading] = useState(false);
     // const fechMoreUpdatesThrottled = useMemo(() => throttle(fetchMoreUpdates), [fetchMoreUpdates]);
-    console.log('APP BODY', gameUpdates.length, Object.keys(ownedGames).length);
     const gameComponents = useMemo(() => {
         const shownEvents = {};     // {[appid]: # of times it's in the list}
         return gameUpdates.map(([, appid], index) => {
@@ -52,7 +51,7 @@ export default function Body() {
             return null;
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [gameUpdates, selectedGame]);
+    }, [gameUpdates]);
 
     useEffect(() => {
         setDisplayedItems([...gameComponents.slice(0, itemsPerPage)]);
@@ -65,6 +64,23 @@ export default function Body() {
         }
     }, [gameUpdates]);
 
+    useEffect(() => {
+        const previousSelectedGame = document.getElementsByClassName(styles.selected)[0];
+        if (previousSelectedGame) {
+            previousSelectedGame.classList.remove(styles.selected);
+        }
+        const selectedGameComponent = document.getElementById(selectedGame?.index);
+        if (selectedGameComponent) {
+            selectedGameComponent.classList.add(styles.selected);
+            if (document.body.style.pointerEvents === 'none') {
+                selectedGameComponent.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                });
+            }
+        }
+    }, [selectedGame, displayedItems]);
+
     // useEffect(() => {
     //     if (gameUpdates.length !== prevLength) {
     // setIsLoading(false);
@@ -73,40 +89,36 @@ export default function Body() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // }, [gameUpdates])
 
+    function showCursor() {
+        document.body.style.pointerEvents = 'all';
+    }
+
+    let timeoutId = null;
+    function handleKeyDown(event) {
+        document.body.style.pointerEvents = 'none';
+
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(showCursor, 5000);
+
+        const selectedIndex = selectedGame?.index ?? -1;
+        let newIndex = selectedIndex;
+
+        if (event.key === 'ArrowUp') {
+            newIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
+        } else if (event.key === 'ArrowDown') {
+            newIndex = selectedIndex < displayedItems.length - 1 ? selectedIndex + 1 : selectedIndex;
+        }
+
+        if (newIndex !== selectedIndex) {
+            const newSelectedGame = displayedItems.find(item => item.props.index === newIndex);
+            const { props: { appid, eventIndex, index } } = newSelectedGame;
+            const update = ownedGames[appid].events[eventIndex];
+            setSelectedGame({ appid, update, index });
+        }
+    };
+
     useEffect(() => {
         let timeoutId = null;
-        const handleKeyDown = (event) => {
-            document.body.style.pointerEvents = 'none';
-
-            clearTimeout(timeoutId);
-            timeoutId = setTimeout(showCursor, 5000);
-
-            const selectedIndex = selectedGame?.index ?? -1;
-            let newIndex = selectedIndex;
-
-            if (event.key === 'ArrowUp') {
-                newIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
-            } else if (event.key === 'ArrowDown') {
-                newIndex = selectedIndex < displayedItems.length - 1 ? selectedIndex + 1 : selectedIndex;
-            }
-
-            if (newIndex !== selectedIndex) {
-                const newSelectedGame = displayedItems.find(item => item.props.index === newIndex);
-                const { props: { appid, eventIndex, index } } = newSelectedGame;
-                const update = ownedGames[appid].events[eventIndex];
-                setSelectedGame({ appid, update, index });
-                const item = document.getElementById(`${appid}${update.posttime}`)
-                console.log('item', item);
-                item?.scrollIntoView({
-                    behavior: 'auto',
-                    block: 'start',
-                })
-            }
-        };
-
-        function showCursor() {
-            document.body.style.pointerEvents = 'all';
-        }
 
         document.addEventListener('mousemove', () => {
             showCursor();

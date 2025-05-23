@@ -21,6 +21,8 @@ $padding: 20px;
 
 .container {
     display: flex;
+    position: fixed;
+    width: 100vw;
     max-height: 100vh;
     margin: 15px 0;
 
@@ -97,6 +99,16 @@ $padding: 20px;
                 padding-bottom: 5px;
                 font-size: 18px;
                 font-weight: 800;
+
+                a {
+                    text-decoration: none;
+
+                    &:hover {
+                        text-decoration: underline;
+                        color: rgb(155, 209, 231);
+                        transition: 200ms;
+                    }
+                }
             }
 
             .update-post-time {

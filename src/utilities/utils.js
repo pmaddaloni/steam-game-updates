@@ -9,11 +9,11 @@ export function webSocketConnectWithRetry(url, retryInterval = 3000, socketType 
         ws = socketType === 'frontend' ? new WebSocket(url) : new ServerWebSocket(url);;
 
         ws.onopen = () => {
-            console.log("WebSocket connected at " + url);
+            // console.log("WebSocket connected at " + url);
         };
 
         ws.onclose = (event) => {
-            console.log(`WebSocket at ${ws.url} closed, reason: ${event.reason}, code: ${event.code}`);
+            // console.log(`WebSocket at ${ws.url} closed, reason: ${event.reason}, code: ${event.code}`);
             if (event.code !== 1000 && retries < maxRetries) { // Don't retry if closed normally
                 retries++;
                 setTimeout(attemptConnect, retryInterval);
@@ -21,7 +21,7 @@ export function webSocketConnectWithRetry(url, retryInterval = 3000, socketType 
         };
 
         ws.onerror = (error) => {
-            console.error("WebSocket error:", error);
+            console.error("Error establishing connection with server - try refreshing.", error);
         };
     }
     attemptConnect();

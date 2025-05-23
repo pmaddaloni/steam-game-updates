@@ -153,6 +153,7 @@ const allSteamGameIDsOrderedByUpdateTime = fs.existsSync(path.join(__dirname, '.
     fs.readFileSync(path.join(__dirname, './storage/allSteamGameIDsOrderedByUpdateTime.txt'), { encoding: 'utf8', flag: 'r' })
     : '[]';    // [appid]
 
+const DAILY_LIMIT = 1000; // should be 100k, but for testing purposes it's lower for now
 const app = express();
 app.locals.allSteamGames = await getAllSteamGameNames();
 app.locals.allSteamGamesUpdates = JSON.parse(gameUpdatesFromFile);
@@ -163,7 +164,7 @@ app.locals.gameIDsToCheckPriorityQueue = new PriorityQueue();
 app.locals.gameIDsToCheckIndex = parseInt(gameIDsToCheckIndex, 10);
 app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
 app.locals.waitBeforeRetrying = false;
-app.locals.dailyLimit = 1000;  // should be 100k, but for testing purposes it's lower for now
+app.locals.dailyLimit = DAILY_LIMIT;
 
 console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates).length} games with their updates.`);
 
@@ -223,7 +224,7 @@ ws.on('error', (error) => {
 
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
-setInterval(() => app.locals.dailyLimit = 100000, 1000 * 60 * 60 * 24);
+setInterval(() => app.locals.dailyLimit = DAILY_LIMIT, 1000 * 60 * 60 * 24);
 
 // Refresh all games every fifteen minutes
 // At this point it's not cleared/guaranteed that the games will always come back in the
@@ -315,7 +316,8 @@ const getGameUpdates = async (externalGameID) => {
     }
 
     if (app.locals.dailyLimit === 0) {
-        console.log('Daily limit reached. Waiting for the next day to continue.');
+        app.locals.dailyLimit = -1; // Prevent message below from printing over and over.
+        console.log(`Daily limit reached at ${new Date()}. Waiting for the next day to continue.`);
     }
 }
 
@@ -330,8 +332,11 @@ setInterval(getGameUpdates, 1000 * 1.6);
 setInterval(() => {
     // We may as well stop saving the files if the daily limit is 0 so we don't keep writing
     // the same data over and over again.
-    // TODO: Optimization -> save once after the daily limit is reached, THEN stop.
-    if (app.locals.dailyLimit !== 0) {
+    if (app.locals.dailyLimit > -2) {
+        // Save once after the daily limit is reached, then stop.
+        if (app.locals.dailyLimit === -1) {
+            app.locals.dailyLimit = -2;
+        }
         fs.writeFile(path.join(__dirname, './storage/allSteamGamesUpdates.txt'), JSON.stringify(app.locals.allSteamGamesUpdates), (err) => {
             if (err) {
                 console.error('Error writing to file allSteamGamesUpdates.txt', err);

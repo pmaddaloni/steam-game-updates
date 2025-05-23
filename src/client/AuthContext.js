@@ -22,10 +22,10 @@ const reducer = (state, { type, value }) => {
             return { ...state, ownedGames: {}, gameUpdates: [] };
         case 'addOwnedGamesEvents':
             const newOwnedGames = { ...state.ownedGames, ...value };
-            localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(newOwnedGames));
+            // localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(newOwnedGames));
             return { ...state, ownedGames: newOwnedGames };
         case 'updateOwnedGames':
-            localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(value));
+            // localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(value));
             return { ...state, ownedGames: { ...value } };
         case 'updateGameUpdates':
             let newGameUpdates = state.gameUpdates.concat(value);
@@ -150,7 +150,7 @@ export const AuthProvider = function ({ children }) {
                 }
             })();
         }
-    }, [state.id, state.ownedGames]);
+    }, [getAllUserOwnedGames, state.id, state.ownedGames]);
 
     // REMOVE THIS WHEN DEPLOYING
     window.state = state;

@@ -26,3 +26,8 @@ yarn-error.log*
 
 # local storage files
 /src/server/storage
+
+# SteamWebPipes
+/SteamWebPipes-master/SteamWebPipes/Events
+/SteamWebPipes-master/SteamWebPipes/obj
+/SteamWebPipes-master/SteamWebPipes/bin

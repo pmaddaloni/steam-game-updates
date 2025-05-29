@@ -17,16 +17,11 @@ async function getMostRecentUpdates(ownedGames) {
                     paramsSerializer: { indexes: true }     // i.e. use brackets with indexes
                 });
             const { updates } = result.data;
-            const filteredUpdates = updates.filter(({ mostRecentUpdateTime }) => mostRecentUpdateTime != null)
-            // An array of {appid: gameID, events: []} in order of updates is returned
-            // Remove the appids in the result from the gameIDs for pagination purposes
-            // return the filtered gameIDs, updates to the context.
-
-            for (const { appid: gameID, events, mostRecentUpdateTime } of filteredUpdates) {
-                if (events) {
-                    ownedGames[gameID].events = events;
-                    gameUpdateTimes.push([mostRecentUpdateTime, gameID]);
-                }
+            const filteredUpdates = updates.filter(({ events }) => events?.length > 0);
+            for (const { appid, events } of filteredUpdates) {
+                ownedGames[appid].events = events;
+                gameUpdateTimes = gameUpdateTimes.concat(
+                    events.map(({ posttime }) => [posttime, appid]));
             }
         } while (gameIDs.length > 0)
         gameUpdateTimes = gameUpdateTimes.sort((a, b) => b[0] - a[0]);

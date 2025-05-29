@@ -1,6 +1,6 @@
 import ServerWebSocket from 'ws';
-const maxRetries = 50;
 
+const MAX_RETRIES = 10;
 export function webSocketConnectWithRetry(url, retryInterval = 3000, socketType = 'frontend') {
     let ws;
     let retries = 0;
@@ -14,7 +14,7 @@ export function webSocketConnectWithRetry(url, retryInterval = 3000, socketType 
 
         ws.onclose = (event) => {
             // console.log(`WebSocket at ${ws.url} closed, reason: ${event.reason}, code: ${event.code}`);
-            if (event.code !== 1000 && retries < maxRetries) { // Don't retry if closed normally
+            if (event.code !== 1000 && retries < MAX_RETRIES) { // Don't retry if closed normally
                 retries++;
                 setTimeout(attemptConnect, retryInterval);
             }
@@ -29,8 +29,8 @@ export function webSocketConnectWithRetry(url, retryInterval = 3000, socketType 
 }
 
 /**
- * A priority queue implementation where items are prioritized by their frequency of insertion.
- * Items with higher frequencies are dequeued before those with lower frequencies.
+ * A priority queue implementation where appIDs are prioritized by their frequency of insertion.
+ * appIDs with higher frequencies are dequeued before those with lower frequencies.
  *
  * @class PriorityQueue
  *
@@ -53,17 +53,17 @@ export function webSocketConnectWithRetry(url, retryInterval = 3000, socketType 
  * @method isEmpty Checks if the queue is empty.
  * @returns {boolean} True if the queue is empty, false otherwise.
  *
- * @method size Returns the number of unique items in the queue.
- * @returns {number} The number of items in the queue.
+ * @method size Returns the number of unique appIDs in the queue.
+ * @returns {number} The number of appIDs in the queue.
  */
 export class PriorityQueue {
     constructor() {
-        this.items = [];
+        this.appIDs = [];
         this.frequencies = new Map();
     }
 
-    enqueue(item) {
-        this.frequencies.set(item, (this.frequencies.get(item) ?? 0) + 1);
+    enqueue(item, priority) {
+        this.frequencies.set(item, (this.frequencies.get(item) ?? 0) + (priority ?? 1));
         this.sort();
     }
 
@@ -71,27 +71,47 @@ export class PriorityQueue {
         if (this.isEmpty()) {
             return null;
         }
-        const item = this.items.shift();
-        this.frequencies.delete(item);
-        return item;
+        const appID = this.appIDs.shift();
+        this.frequencies.delete(appID);
+        return appID;
     }
 
     sort() {
-        this.items = Array.from(
+        this.appIDs = Array.from(
             this.frequencies.keys())
             .sort((a, b) => this.frequencies.get(b) - this.frequencies.get(a)
             );
     }
 
-    peek() {
-        return this.isEmpty() ? null : this.items[0];
-    }
-
     isEmpty() {
-        return this.items.length === 0;
+        return this.appIDs.length === 0;
     }
 
     size() {
-        return this.items.length;
+        return this.appIDs.length;
     }
+}
+
+export async function notifyUser(gameName, image, logo) {
+    if (!("Notification" in window)) {
+        // Check if the browser supports notifications
+        console.log("This browser does not support desktop notification");
+        return;
+    }
+
+    if (Notification.permission === "default") {
+        // We need to ask the user for permission
+        await Notification.requestPermission();
+    }
+
+    if (Notification.permission === "granted") {
+        new Notification(`New Update for ${gameName}`, {
+            body: `Refresh SteamGameUpdates to view latest updates for ${gameName}.`,
+            icon: logo,
+            image
+        });
+    }
+
+    // If the user has denied notifications, we want
+    // to be respectful - there is no need to ask them again.
 }

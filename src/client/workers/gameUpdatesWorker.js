@@ -18,7 +18,7 @@ async function getMostRecentUpdatesForGame({ appid, name }) {
 }
 
 onmessage = async function (event) {
-    // DISABLE automatic updates for now
-    // const updates = await getMostRecentUpdatesForGame(event.data);
-    // postMessage(updates);
+    await getMostRecentUpdatesForGame(event.data);
+    // const gameInfo = await getMostRecentUpdatesForGame(event.data);
+    // postMessage(gameInfo);
 };

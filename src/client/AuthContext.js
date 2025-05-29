@@ -1,6 +1,9 @@
 import axios from 'axios';
 import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
-import { webSocketConnectWithRetry } from '../utilities/utils.js';
+import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
+import logo from './body/steam-logo.svg';
+
+
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
@@ -53,7 +56,8 @@ export const AuthProvider = function ({ children }) {
             // One of two types of messages is being received here:
             // 1. A map of apps that updated which was retrieved from Valve's PICS service
             // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
-            const { /* appid, events, mostRecentUpdateTime,  */apps } = JSON.parse(event.data);
+            const { appid, events,/*  mostRecentUpdateTime, */apps } = JSON.parse(event.data);
+            // console.log('Received message from SteamGameUpdates socket:', apps, appid, events);
             if (apps != null) {
                 const appids = Object.keys(apps);
                 for (const appid of appids) {
@@ -61,9 +65,15 @@ export const AuthProvider = function ({ children }) {
                         gameUpdatesWorker.postMessage({ appid, name: state.ownedGames[appid].name });
                     }
                 }
+            } else if (appid != null && state.ownedGames[appid] != null && events?.length > 0) {
+                // If the appid is present, it means a specific game has updated.
+                const name = state.ownedGames[appid].name;
+                const image = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/capsule_184x69.jpg`
+                notifyUser(name, image, logo);
             }
             // If this is enabled, the list updates in real time.
             // The issue is that the list shifts around when a new game is added, which isn't ideal.
+            // For now utilizing browser notifications to alert the user of updates instead.
             /*  else if (state.ownedGames[appid] != null && events?.length > 0) {
                 dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name: state.ownedGames[appid].name, events } } });
                 dispatch({ type: 'updateGameUpdates', value: [[mostRecentUpdateTime, appid]] });
@@ -86,9 +96,7 @@ export const AuthProvider = function ({ children }) {
                 if (result == null) {
                     return;
                 }
-                const { appid, name, events } = result;
-                dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name, events } } });
-                dispatch({ type: 'updateGameUpdates', value: appid });
+
             };
             // Clean up the worker when the component unmounts
             return () => {
@@ -111,7 +119,7 @@ export const AuthProvider = function ({ children }) {
         }
     }, [dispatch]);
 
-    const getAllUserOwnedGames = async (userID = state.id) => {
+    const getAllUserOwnedGames = useCallback(async (userID = state.id) => {
         const result = await axios.get('api/owned-games', { params: { id: userID } })
         if (result != null) {
             const ownedGames = result?.data?.games?.reduce((acc, game) => {
@@ -123,7 +131,7 @@ export const AuthProvider = function ({ children }) {
             const ownedGames = localStorage.getItem('steam-game-updates-ownedGames');
             return ownedGames && JSON.parse(ownedGames);
         };
-    }
+    }, [state.id])
 
     const fetchMoreUpdates = useCallback(() => {
         gameDetailsWorker.postMessage(state.ownedGames);;

@@ -175,7 +175,7 @@ export default function Body() {
                                         name={ownedGames[selectedGame.appid].name}
                                     />
                                     :
-                                    'Click a game to see its update details!'
+                                    'Click or use the keyboard to see a game\'s update details!'
                             }
                             </div>
                         </div>

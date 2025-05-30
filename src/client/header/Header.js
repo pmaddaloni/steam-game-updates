@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useEffect, useState } from 'react';
 
 import { useAuth } from '../AuthContext';
 import styles from './header-styles.module.scss';
@@ -7,7 +8,12 @@ const loginLocation = "http://localhost:8080/auth/steam";
 const logoutLocation = "http://localhost:8080/logout";
 
 export default function Header() {
-    const { id: userID, displayName, photos, dispatch } = useAuth();
+    const { id: userID, displayName, photos, dispatch, gameUpdates } = useAuth();
+    const [refreshDisabled, setRefreshDisabled] = useState(true);
+
+    useEffect(() => {
+        setRefreshDisabled(gameUpdates.length === 0);
+    }, [gameUpdates])
 
     const login = async () => {
         const newWindow = window.open(loginLocation, 'Steam Sign-in',
@@ -24,7 +30,7 @@ export default function Header() {
                 }
             }, 500);
         } else {
-            // TODO: Report error to user
+            alert("Failed to open new window to sign in to Steam. Please check your browser settings or popup blockers.");
             console.error("Failed to open new window. Please check your browser settings or popup blockers.");
         }
     };
@@ -39,10 +45,15 @@ export default function Header() {
     return (
         <div className={styles.header}>
             <div>Steam Game Updates</div>
-            <button className={styles.refreshGames} onClick={() => {
-                dispatch({ type: 'refreshGames' })
+            {userID !== '' &&
+                <button
+                    disabled={refreshDisabled}
+                    className={styles.refreshGames}
+                    onClick={() => {
+                        dispatch({ type: 'refreshGames' })
+                    }}
+                >Refresh Games</button>
             }
-            }>Refresh Games</button>
             {userID !== '' ?
                 <div className={styles.menu} >
                     <img src={photos[0]?.value} alt='user-avatar' />

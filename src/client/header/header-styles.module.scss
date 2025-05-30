@@ -53,6 +53,12 @@ $menu-side-padding: 20px;
             color: #8e7f7f;
             transition: all 0.2s ease-in-out;
         }
+
+        &:disabled {
+            opacity: 50%;
+            pointer-events: none;
+            cursor: not-allowed;
+        }
     }
 
     button.login,

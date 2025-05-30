@@ -1,4 +1,7 @@
 import parse from 'html-react-parser';
+import { useEffect, useState } from 'react';
+import { getViableImageURL } from '../../utilities/utils';
+
 import styles from './body-styles.module.scss';
 
 function formatTextToHtml(text) {
@@ -92,8 +95,23 @@ function formatTextToHtml(text) {
     return html;
 };
 
-export default function GameUpdateContentComponent({ appid, update }) {
+export default function GameUpdateContentComponent({ appid, name, update }) {
+    const [imageURL, setImageURL] = useState(null);
     const patchNotesURL = `https://steamcommunity.com/games/${appid}/announcements/detail/${update.gid}`
+
+    useEffect(() => {
+        const imageURLs = [
+            `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`,
+            `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/capsule_231x87.jpg`,
+            'api'
+        ];
+
+        (async () => {
+            const validImageURL = await getViableImageURL(imageURLs, 'header_image', appid, name)
+            setImageURL(validImageURL);
+        })();
+    }, [appid, name]);
+
     return (
         <>
             <div className={styles['update-header']}>
@@ -108,8 +126,10 @@ export default function GameUpdateContentComponent({ appid, update }) {
                         <span>{new Date(update.posttime * 1000).toLocaleTimeString()}</span>
                     </div>
                 </div>
-                <img className={styles['game-capsule']} src={`https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/capsule_231x87.jpg`} alt="logo" />
-            </div>
+                {imageURL != null ?
+                    <img className={styles['game-capsule']} src={imageURL} alt="logo" /> :
+                    <div className={styles['game-capsule']}>{name}</div>
+                }</div>
             <div className={styles['update-divider']} />
             <div className={styles['update-body']}>{parse(formatTextToHtml(update?.body))}</div>
         </ >

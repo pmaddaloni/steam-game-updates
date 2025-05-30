@@ -1,3 +1,4 @@
+import axios from 'axios';
 import ServerWebSocket from 'ws';
 
 const MAX_RETRIES = 10;
@@ -92,7 +93,7 @@ export class PriorityQueue {
     }
 }
 
-export async function notifyUser(gameName, image, logo) {
+export async function notifyUser(gameName, icon, backupLogo) {
     if (!("Notification" in window)) {
         // Check if the browser supports notifications
         console.log("This browser does not support desktop notification");
@@ -107,11 +108,46 @@ export async function notifyUser(gameName, image, logo) {
     if (Notification.permission === "granted") {
         new Notification(`New Update for ${gameName}`, {
             body: `Refresh SteamGameUpdates to view latest updates for ${gameName}.`,
-            icon: logo,
-            image
+            icon: icon ?? backupLogo,
         });
     }
 
     // If the user has denied notifications, we want
     // to be respectful - there is no need to ask them again.
+}
+
+export function checkImageURL(imageUrl) {
+    return new Promise((resolve,) => {
+        const img = new Image();
+        img.src = imageUrl;
+        img.onload = () => {
+            resolve(true);
+        };
+        img.onerror = () => {
+            resolve(false);
+        };
+    });
+}
+
+export async function getViableImageURL(imageURLs, imageKey, appid, name) {
+    const localImageURLs = [...imageURLs];
+    let validImageURL = null;
+    do {
+        const url = localImageURLs.shift();
+        if (url.startsWith('api')) {
+            try {
+                const result = await axios.get('/api/game-details', { params: { appid } });
+                const { [imageKey]: imageURL } = result?.data;
+                validImageURL = imageURL;
+            } catch {
+                console.error(`Could not retrieve image for ${name}.`)
+            }
+        } else {
+            const isValidURL = await checkImageURL(url);
+            if (isValidURL) {
+                validImageURL = url;
+            }
+        }
+    } while (validImageURL === null && localImageURLs.length > 0)
+    return validImageURL;
 }

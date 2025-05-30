@@ -106,10 +106,17 @@ export async function notifyUser(gameName, icon, backupLogo) {
     }
 
     if (Notification.permission === "granted") {
-        new Notification(`New Update for ${gameName}`, {
+        const notification = new Notification(`New Update for ${gameName}`, {
             body: `Refresh SteamGameUpdates to view latest updates for ${gameName}.`,
             icon: icon ?? backupLogo,
         });
+
+        // Clicking should focus on the Steam Game Updates tab.
+        notification.onclick = function (event) {
+            event.preventDefault();
+            window.focus();
+            event.target.close();
+        };
     }
 
     // If the user has denied notifications, we want

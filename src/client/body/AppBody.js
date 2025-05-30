@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../AuthContext';
 import styles from './body-styles.module.scss';
 import GameUpdateContentComponent from './GameUpdateContentComponent';
@@ -6,33 +6,16 @@ import GameUpdateListComponent from './GameUpdateListComponent';
 
 import logo from './steam-logo.svg';
 
-/* let timer = null;
-function throttle(func, delay = 5000) {
-    let timerFlag = null;
-    return (...args) => {
-        if (timerFlag === null) {
-            func(...args);
-            timerFlag = setTimeout(() => {
-                timerFlag = null;
-            }, delay);
-        }
-    };
-} */
-
-
 export default function Body() {
     const itemsPerPage = 25;
-    const { id, gameUpdates, ownedGames, /* fetchMoreUpdates */ } = useAuth();
+    const { id, gameUpdates, ownedGames } = useAuth();
     const [displayedItems, setDisplayedItems] = useState([]);
     const [startIndex, setStartIndex] = useState(0);
     const [selectedGame, setSelectedGame] = useState(null);
-    // const [prevLength, setPrevLength] = useState(0);
-    // const [isLoading, setIsLoading] = useState(false);
-    // const fechMoreUpdatesThrottled = useMemo(() => throttle(fetchMoreUpdates), [fetchMoreUpdates]);
     const gameComponents = useMemo(() => {
         const shownEvents = {};     // {[appid]: # of times it's in the list}
         return gameUpdates.map(([, appid], index) => {
-            const { events } = ownedGames[appid] ?? {};
+            const { events, name } = ownedGames[appid] ?? {};
             if (events != null && events.length > 0) {
                 shownEvents[appid] = (shownEvents[appid] ?? -1) + 1
                 const update = events[shownEvents[appid]];
@@ -40,6 +23,7 @@ export default function Body() {
                     <GameUpdateListComponent
                         key={appid + '-' + update?.posttime}
                         appid={appid}
+                        name={name}
                         update={update}
                         setSelectedGame={setSelectedGame}
                         selectedGame={selectedGame}
@@ -81,24 +65,18 @@ export default function Body() {
         }
     }, [selectedGame, displayedItems]);
 
-    // useEffect(() => {
-    //     if (gameUpdates.length !== prevLength) {
-    // setIsLoading(false);
-    // setPrevLength(gameUpdates.length)
-    // }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    // }, [gameUpdates])
-
     function showCursor() {
         document.body.style.pointerEvents = 'all';
     }
 
-    let timeoutId = null;
-    function handleKeyDown(event) {
+    const handleKeyDown = useCallback((event) => {
         document.body.style.pointerEvents = 'none';
 
-        clearTimeout(timeoutId);
-        timeoutId = setTimeout(showCursor, 5000);
+        // Use a ref for timeoutId to persist across renders
+        if (handleKeyDown.timeoutId) {
+            clearTimeout(handleKeyDown.timeoutId);
+        }
+        handleKeyDown.timeoutId = setTimeout(showCursor, 5000);
 
         const selectedIndex = selectedGame?.index ?? -1;
         let newIndex = selectedIndex;
@@ -111,11 +89,13 @@ export default function Body() {
 
         if (newIndex !== selectedIndex) {
             const newSelectedGame = displayedItems.find(item => item.props.index === newIndex);
-            const { props: { appid, eventIndex, index } } = newSelectedGame;
-            const update = ownedGames[appid].events[eventIndex];
-            setSelectedGame({ appid, update, index });
+            if (newSelectedGame) {
+                const { props: { appid, eventIndex, index } } = newSelectedGame;
+                const update = ownedGames[appid].events[eventIndex];
+                setSelectedGame({ appid, update, index });
+            }
         }
-    };
+    }, [displayedItems, ownedGames, selectedGame]);
 
     useEffect(() => {
         let timeoutId = null;
@@ -130,7 +110,7 @@ export default function Body() {
             document.removeEventListener('mousemove', showCursor);
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [displayedItems, ownedGames, selectedGame]);
+    }, [displayedItems, handleKeyDown, ownedGames, selectedGame]);
 
     const handleScroll = () => {
         const gameList = document.getElementById('game-list');
@@ -140,47 +120,21 @@ export default function Body() {
             const nextItems = [...gameComponents.slice(startIndex, nextIndex)];
             setStartIndex(nextIndex);
             setDisplayedItems([...displayedItems, ...nextItems]);
-            // setIsLoading(true);
-            // fechMoreUpdatesThrottled()
         }
     };
 
-    // const callback = useCallback((entries) => {
-    //     const entry = entries[0];
-    //     const isIntersecting = entry?.isIntersecting
-    //     if (isIntersecting) {
-    //         const nextIndex = startIndex + itemsPerPage;
-    //         const nextItems = [...gameComponents.slice(startIndex, nextIndex)];
-    //         setStartIndex(nextIndex);
-    //         setDisplayedItems([...displayedItems, ...nextItems]);
-    //     }
-    // }, [displayedItems, gameComponents, startIndex]);
-
     useEffect(() => {
-        // const options = {
-        //     root: document.querySelector("#game-list"),
-        //     rootMargin: "0px",
-        //     threshold: 1,
-        // };
-
-        // const observer = new IntersectionObserver(callback, options);
         const gameList = document.getElementById('game-list');
-        // const gameList = document.getElementsByClassName(styles.game);
         if (gameList == null) {
             return;
         }
 
-        // [...gameList].forEach(game => {
-        //     if (game.dataset.index == displayedItems.length - 4) {
-        //         observer.observe(game);
-        //     }
-        // })
         gameList.addEventListener('scroll', handleScroll);
         return () => {
             gameList.removeEventListener('scroll', handleScroll);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [displayedItems, /* isLoading */]);
+    }, [displayedItems]);
 
     return (
         <div className={styles["app-body"]} >
@@ -189,9 +143,13 @@ export default function Body() {
                     <img src={logo} className="App-logo" alt="logo" />
                     <p>
                         {id === '' ?
-                            <>Log in to see updates for your games</>
+                            <>
+                                Log in to see updates for your games!
+                                <br />
+                                <small><b>**</b>Your profile must be public for this to work.<b>**</b></small>
+                            </>
                             :
-                            <>Fetching your owned games</>
+                            <>Gathering patch notes for your owned games - hang tight!</>
                         }
                     </p>
                 </div> :
@@ -214,6 +172,7 @@ export default function Body() {
                                     <GameUpdateContentComponent
                                         appid={selectedGame.appid}
                                         update={selectedGame.update}
+                                        name={ownedGames[selectedGame.appid].name}
                                     />
                                     :
                                     'Click a game to see its update details!'

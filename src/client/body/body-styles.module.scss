@@ -31,6 +31,7 @@ $padding: 20px;
         overflow-x: auto;
         overflow-y: scroll;
         min-width: 50vw;
+        width: 70vw;
         max-height: 100vh;
 
         .update {
@@ -116,6 +117,10 @@ $padding: 20px;
                 font-weight: 600;
             }
         }
+
+        .game-capsule {
+            width: 300px;
+        }
     }
 
     .update-divider {
@@ -139,8 +144,9 @@ $padding: 20px;
 .game-list {
     size: 12px;
     overflow-y: scroll;
-    width: 35vw;
+    width: 30vw;
     min-width: 500px;
+    max-width: 600px;
     max-height: 100vh;
     font-family: "Open Sans", sans-serif;
     font-weight: 600;
@@ -186,6 +192,28 @@ $padding: 20px;
         background-color: #32414c;
         border: rgb(128, 128, 128) 1px solid;
 
+        &:hover {
+            transition: 500ms;
+            background-color: rgb(57, 73, 96);
+            border-color: white;
+        }
+
+        &:active {
+            transition: 500ms;
+            background-color: rgb(136, 152, 174);
+            border-color: white;
+        }
+
+        &.selected {
+            transition: 500ms;
+            background-color: rgb(73, 105, 149);
+            border-color: white;
+        }
+
+        & div {
+            padding: 0px 10px 0px 0px;
+        }
+
         .patch-date {
             width: 150px;
             margin-top: auto;
@@ -206,34 +234,14 @@ $padding: 20px;
             text-align: center;
         }
 
-        &:hover {
-            transition: 500ms;
-            background-color: rgb(57, 73, 96);
-            border-color: white;
-        }
-
-        &:active {
-            transition: 500ms;
-            background-color: rgb(136, 152, 174);
-            border-color: white;
-        }
-
-        &.selected {
-            transition: 500ms;
-            background-color: rgb(73, 105, 149);
-            border-color: white;
-        }
 
         #game-update {
             flex-grow: 2;
         }
 
-        & div {
-            padding: 0px 10px 0px 0px;
-        }
-
         img {
             width: 155px;
+            height: 59px;
         }
     }
 }

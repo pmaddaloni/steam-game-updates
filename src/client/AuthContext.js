@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
 import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
-import logo from './body/steam-logo.svg';
+import backupLogo from './body/steam-logo.svg';
 
 
 export const AuthContext = createContext();
@@ -41,23 +41,17 @@ const reducer = (state, { type, value }) => {
 let gameDetailsWorker = null;
 let gameUpdatesWorker = null;
 let steamGameUpdatesSocket = new webSocketConnectWithRetry('ws://localhost:8081/');
-// let steamWebPipesWebSocket = new webSocketConnectWithRetry('ws://localhost:8181/');
-
 
 export const AuthProvider = function ({ children }) {
     const [state, dispatch] = useReducer(reducer, defaultState);
 
     // Web worker and socket setup
     useEffect(() => {
-        // steamWebPipesWebSocket.onmessage = (event) => {
-        //     console.log(event.data);
-        // }
         steamGameUpdatesSocket.onmessage = (event) => {
             // One of two types of messages is being received here:
             // 1. A map of apps that updated which was retrieved from Valve's PICS service
             // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
-            const { appid, events,/*  mostRecentUpdateTime, */apps } = JSON.parse(event.data);
-            // console.log('Received message from SteamGameUpdates socket:', apps, appid, events);
+            const { appid, eventsLength, apps } = JSON.parse(event.data);
             if (apps != null) {
                 const appids = Object.keys(apps);
                 for (const appid of appids) {
@@ -65,11 +59,12 @@ export const AuthProvider = function ({ children }) {
                         gameUpdatesWorker.postMessage({ appid, name: state.ownedGames[appid].name });
                     }
                 }
-            } else if (appid != null && state.ownedGames[appid] != null && events?.length > 0) {
+            } else if (appid != null && state.ownedGames[appid] != null && eventsLength > 0) {
                 // If the appid is present, it means a specific game has updated.
+                console.log(`Notified of ${eventsLength} update(s) for game ${appid} (${state.ownedGames[appid].name})`);
                 const name = state.ownedGames[appid].name;
-                const image = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/capsule_184x69.jpg`
-                notifyUser(name, image, logo);
+                const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
+                notifyUser(name, icon, backupLogo);
             }
             // If this is enabled, the list updates in real time.
             // The issue is that the list shifts around when a new game is added, which isn't ideal.
@@ -89,14 +84,6 @@ export const AuthProvider = function ({ children }) {
                 const { ownedGamesWithUpdates, gameUpdatesIDs } = event.data;
                 dispatch({ type: 'updateOwnedGames', value: ownedGamesWithUpdates });
                 dispatch({ type: 'updateGameUpdates', value: gameUpdatesIDs });
-            };
-
-            gameUpdatesWorker.onmessage = function (event) {
-                const result = event.data;
-                if (result == null) {
-                    return;
-                }
-
             };
             // Clean up the worker when the component unmounts
             return () => {
@@ -123,8 +110,13 @@ export const AuthProvider = function ({ children }) {
         const result = await axios.get('api/owned-games', { params: { id: userID } })
         if (result != null) {
             const ownedGames = result?.data?.games?.reduce((acc, game) => {
-                // A game's name and events will be entered here later by the worker
-                return { ...acc, [game.appid]: {} }
+                return {
+                    ...acc, [game.appid]: {
+                        name: game.name,
+                        img_icon_url: game.img_icon_url,
+                        img_logo_url: game.img_logo_url,    // this appears to be missing as of a year ago... https://bit.ly/3SYvabT
+                    }
+                }
             }, {});
             return ownedGames;
         } else {
@@ -138,7 +130,14 @@ export const AuthProvider = function ({ children }) {
     }, [state.ownedGames]);
 
     useEffect(() => {
-        checkLocalStorage();
+        (async () => {
+            try {
+                await axios.get('/api/user');
+                checkLocalStorage();
+            } catch (e) {
+                console.log('User session has expired - need to log in.');
+            }
+        })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 

@@ -142,8 +142,8 @@ app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
 app.locals.gameIDsToCheckIndex = parseInt(gameIDsToCheckIndex, 10);
 app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
 app.locals.waitBeforeRetrying = false;
-const [lastStartTime, currentLimit] = JSON.parse(serverRefreshTimeAndCount);
-app.locals.dailyLimit = currentLimit - 200; // Playing it safe and always giving a buffer on startup of 200 less requests so as not to overwhelm the API
+const [lastStartTime, lastDailyLimitUsage] = JSON.parse(serverRefreshTimeAndCount);
+app.locals.dailyLimit = lastDailyLimitUsage - 200; // Playing it safe and always giving a buffer on startup of 200 less requests so as not to overwhelm the API
 app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
 
 async function getGameIDUpdates(gameID, prioritizedRequest = false) {
@@ -162,37 +162,35 @@ async function getGameIDUpdates(gameID, prioritizedRequest = false) {
             );
         result = response.data;
     } catch (err) {
-        let resultRetryAfter = err.response.headers['retry-after'];
+        console.error(`Getting the game ${gameID}'s updates failed.`, err.message, '\n', err.response?.data);
+        let resultRetryAfter = err.response?.headers?.['retry-after'];
         if (resultRetryAfter) {
             resultRetryAfter = parseInt(resultRetryAfter, 10);
         }
         if (err.response?.status === 429) {
             if (resultRetryAfter) {
                 const retryAfter = resultRetryAfter ?? 5 * 60; // Default to 5 minutes if no Retry-After header is found
-                console.log(`Rate limited. Retry after: ${retryAfter} seconds.`);
                 result = {
                     status: 429,
                     retryAfter
                 }
             }
         } else if (err.response?.status === 403) {
-            console.log(`403 received! ${resultRetryAfter ? `Retrying after ${resultRetryAfter} seconds` : 'Backing off...'}.`);
             result = {
                 status: 403,
                 retryAfter: resultRetryAfter
             }
         } else {
             // Something went wrong other than rate limiting
-            console.error(`Getting the game ${gameID}'s updates failed.`, err.message, err.response?.data);
             result = {
-                status: 500,
+                status: err.response?.status,
                 retryAfter: -1,
             }
         }
     }
     return result;
 }
-
+console.log(`Server last refreshed on ${new Date(app.locals.lastServerRefreshTime)} with ${app.locals.dailyLimit} requests left`);
 console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates).length} games with their updates.`);
 
 // START Steam Game Updates WebSocket connection
@@ -256,7 +254,7 @@ setTimeout(() => {
     app.locals.dailyLimit = DAILY_LIMIT;
     app.locals.lastServerRefreshTime = new Date().getTime();
 
-    setInterval(function () {
+    setInterval(() => {
         app.locals.dailyLimit = DAILY_LIMIT;
         app.locals.lastServerRefreshTime = new Date().getTime();
     }, 1000 * 60 * 60 * 24);    // Set a new interval of 24 hours
@@ -320,7 +318,7 @@ const getGameUpdates = async (externalGameID) => {
                         }
                     });
                 }
-                console.log(`Getting the game ${gameID}'s updates completed with ${app.locals.allSteamGamesUpdates[gameID]?.length ?? 0} event(s)`);
+                console.log(`Getting the game ${gameID}'s updates completed with ${app.locals.allSteamGamesUpdates[gameID]?.length ?? 0} event(s), with ${app.locals.dailyLimit} requests left.`);
             } else if (result.status === 429 || result.status === 403) {
                 if (result.status === 429 || result.retryAfter != null) {
                     app.locals.waitBeforeRetrying = true;
@@ -336,7 +334,6 @@ const getGameUpdates = async (externalGameID) => {
             } else {
                 // This gameID has not been found for whatever reason, so don't try it again.
                 app.locals.gameIDsWithErrors.add(gameID);
-                console.log(`Getting the game ${gameID}'s updates failed with code ${result.status}`);
                 // Only increment the index if this was not a manual request.
                 if (externalGameID == null && priorityGameID == null) {
                     app.locals.gameIDsToCheckIndex++;
@@ -599,5 +596,4 @@ app.get('/auth/steam/return',
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
     console.log(`server listening on port ${PORT}`);
-    console.log('Press Ctrl+C to quit.');
 });

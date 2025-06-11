@@ -221,12 +221,6 @@ $padding: 20px;
             text-align: center;
         }
 
-        .game-title {
-            width: fit-content;
-            height: 59px;
-            padding-right: 0;
-        }
-
         .patch-title {
             width: 250px;
             margin-top: auto;
@@ -234,6 +228,11 @@ $padding: 20px;
             text-align: center;
         }
 
+        .game-title {
+            width: fit-content;
+            height: 59px;
+            padding-right: 0;
+        }
 
         #game-update {
             flex-grow: 2;

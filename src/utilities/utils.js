@@ -7,7 +7,7 @@ export function webSocketConnectWithRetry(url, retryInterval = 3000, socketType 
     let retries = 0;
 
     function attemptConnect() {
-        ws = socketType === 'frontend' ? new WebSocket(url) : new ServerWebSocket(url);;
+        ws = socketType === 'frontend' ? new WebSocket(url) : new ServerWebSocket(url);
 
         ws.onopen = () => {
             // console.log("WebSocket connected at " + url);

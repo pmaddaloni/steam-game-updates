@@ -24,6 +24,10 @@ function formatTextToHtml(text) {
                     html += '<u>';
                 } else if (word === '[/u]') {
                     html += '</u>';
+                } else if (word === '[p]') {
+                    html += '<p>';
+                } else if (word === '[/p]') {
+                    html += '</p>';
                 } else if (word === '[br]') {
                     html += '<br />';
                 } else if (word === '[hr]') {
@@ -40,6 +44,8 @@ function formatTextToHtml(text) {
                     html += '</ol>';
                 } else if (word === '[*]') {
                     html += '<li>';
+                } else if (word === '[/*]') {
+                    html += '</li>';
                 } else if (word.startsWith('[h1')) {
                     html += '<h1>';
                 } else if (word === '[/h1]') {
@@ -74,6 +80,11 @@ function formatTextToHtml(text) {
                     isImage = false;
                 } else if (word === '[/img]') {
                     html += ' alt="image" />';
+                } else if (word.startsWith('[img ')) {
+                    let url = word.match(/"(.*?)"/)?.[1] ?? '';
+                    url = url.replace('{STEAM_CLAN_IMAGE}',
+                        'https://clan.cloudflare.steamstatic.com/images/')
+                    html += `<img src=${url}`;
                 } else if (word.includes('https://')) {
                     const urlRegex = /(https?:\/\/[^\s]+)/g
                     const urlMatch = word.match(urlRegex)[0];

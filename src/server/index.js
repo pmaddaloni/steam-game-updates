@@ -1,15 +1,18 @@
 import axios from 'axios';
-import { execFile } from 'child_process';
+import { spawn } from 'child_process';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
+import useragent from 'express-useragent';
 import fs from 'fs';
 import PQueue from 'p-queue';
 import passport from 'passport';
 import { Strategy as SteamStrategy } from 'passport-steam';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { v4 as uuidv4 } from 'uuid';
 import WebSocket, { WebSocketServer } from 'ws';
+
 import config from '../../config.js';
 import { PriorityQueue, webSocketConnectWithRetry } from '../utilities/utils.js';
 
@@ -17,24 +20,7 @@ const __filename = fileURLToPath(import.meta.url);  // get the resolved path to 
 const __dirname = path.dirname(__filename);         // get the name of the directory
 
 // Spin up SteamWebPipes server
-execFile(path.join(__dirname, '../../SteamWebPipes-master/bin/SteamWebPipes'),
-    (error, stdout, _stderr) => {
-        if (error) {
-            throw error;
-        }
-        console.log(stdout);
-    }
-);
-
-// Simple route middleware to ensure user is authenticated.
-//   Use this route middleware on any resource that needs to be protected.  If
-//   the request is authenticated (typically via a persistent login session),
-//   the request will proceed.  Otherwise, the user will be redirected to the
-//   login page.
-const ensureAuthenticated = function (req, res, next) {
-    if (req.isAuthenticated()) { return next(); }
-    res.redirect('/');
-}
+spawn(path.join(__dirname, '../../SteamWebPipes-master/bin/SteamWebPipes'));
 
 // Passport session setup.
 //   To support persistent login sessions, Passport needs to be able to
@@ -58,12 +44,13 @@ passport.deserializeUser(function (obj, done) {
 passport.use(new SteamStrategy({
     returnURL: 'http://localhost:8080/auth/steam/return',
     realm: 'http://localhost:8080/',
-    apiKey: config.STEAM_API_KEY
+    apiKey: config.STEAM_API_KEY,
+    passReqToCallback: true
 },
-    function (identifier, profile, done) {
+    function (req, identifier, profile, done) {
         // asynchronous verification, for effect...
+        console.log('Steam profile received:', profile);
         process.nextTick(function () {
-
             // To keep the example simple, the user's Steam profile is returned to
             // represent the logged-in user.  In a typical application, you would want
             // to associate the Steam account with a user record in your database,
@@ -102,9 +89,9 @@ const app = express();
 app.locals.requestQueue = new PQueue({ interval: WAIT_TIME, intervalCap: NUMBER_OFREQUESTS_PER_WAIT_TIME });
 app.locals.gameIDsToCheckPriorityQueue = new PriorityQueue();
 
-function makeRequest(url) {
+function makeRequest(url, method = 'get') {
     return async () => {
-        return await axios.get(url);
+        return axios[method](url);
     }
 };
 
@@ -142,9 +129,19 @@ app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
 app.locals.gameIDsToCheckIndex = parseInt(gameIDsToCheckIndex, 10);
 app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
 app.locals.waitBeforeRetrying = false;
-const [lastStartTime, lastDailyLimitUsage] = JSON.parse(serverRefreshTimeAndCount);
+const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
 app.locals.dailyLimit = lastDailyLimitUsage - 200; // Playing it safe and always giving a buffer on startup of 200 less requests so as not to overwhelm the API
 app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
+// Since passport isn't properly tracking sessions, we need to track them ourselves.
+// We generate our own UUIDs to check against for the mobile app.
+app.locals.sessions = new Set();
+
+const ensureAuthenticated = function (req, res, next) {
+    if (req.isAuthenticated() || app.locals.sessions.has(req.headers['session-id'])) {
+        return next();
+    }
+    res.redirect('/');
+}
 
 async function getGameIDUpdates(gameID, prioritizedRequest = false) {
     let result = null;
@@ -260,6 +257,12 @@ setTimeout(() => {
     }, 1000 * 60 * 60 * 24);    // Set a new interval of 24 hours
 }, (app.locals.lastServerRefreshTime + (1000 * 60 * 60 * 24)) - (new Date().getTime()));  // (lastStartTime + 24hrs) - currentTime
 
+// Log out all users every 2 days.
+// Maybe make this longer in the future.
+setInterval(() => {
+    app.locals.sessions = new Set();
+}, (1000 * 60 * 60 * 24) * 2);    // Set a new interval of 24 hours
+
 // Refresh all games every fifteen minutes
 // At this point it's not cleared/guaranteed that the games will always come back in the
 // same order, but it appears to be the case, at least for now.
@@ -302,8 +305,8 @@ const getGameUpdates = async (externalGameID) => {
 
                 // For now, just keep track of the most recent 10 updates
                 const mostRecentEvents = result.events.slice(0, 10).map(event => event.announcement_body);
-                const mostRecentKnownEvent = (app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime * 1000) ?? 0;
-                if (mostRecentEvents.length > 0 && mostRecentKnownEvent < mostRecentEvents[0]?.posttime * 1000) {
+                const mostRecentKnownEvent = app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0;
+                if (mostRecentEvents.length > 0 && mostRecentKnownEvent < mostRecentEvents[0]?.posttime) {
                     app.locals.allSteamGamesUpdates[gameID] = mostRecentEvents
 
                     // Only increment the index if this was not a manual request.
@@ -430,6 +433,7 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(cors());
+app.use(useragent.express());
 
 app.set('views', path.join(__dirname, './views'));
 app.set('view engine', 'ejs');
@@ -478,10 +482,12 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
             makeRequest(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${config.STEAM_API_KEY}&steamid=${req.query.id}&include_appinfo=true`),
             { priority: 3 }   // Prioritize this request above all others
         )
-            .then(response => result = response)
+            .then(response => { result = response })
             .catch(err => {
-                console.error(`\nGetting the user ${req.query.id}'s owned games FAILED with code "${err.response?.status}" - no code means the server didn't responsd.\n`, err);
-                setTimeout(() => app.locals.waitBeforeRetrying = false, result.retryAfter * 1000);
+                console.error(`\nGetting the user ${req.query.id}'s owned games FAILED with code "${err.response?.status}"`
+                    + ` and message "${err.response.statusText} (no code means the server didn't responsd).\n`, err);
+                app.locals.waitBeforeRetrying = true;
+                setTimeout(() => app.locals.waitBeforeRetrying = false, (err.response.retryAfter ?? 1000 * 60 * 5) * 1000);
             });
         app.locals.dailyLimit--;
         console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count} games`);
@@ -541,7 +547,6 @@ app.get('/api/game-details', ensureAuthenticated, async (req, res) => {
     if (req.app.locals.waitBeforeRetrying === false && req.app.locals.dailyLimit > 0) {
         let result = null;
         const appid = req.query.appid;
-        console.log('getting game details for game', appid)
         if (app.locals.steamGameDetails[appid] == null) {
             await app.locals.requestQueue.add(
                 makeRequest(`https://store.steampowered.com/api/appdetails?appids=${appid}`),
@@ -550,7 +555,6 @@ app.get('/api/game-details', ensureAuthenticated, async (req, res) => {
                 .then(response => result = response?.data)
                 .catch(err => console.error(`Getting the game ${appid}'s details failed.`, err));
             // Since we bothered to get this game's details, let's hold on to them...
-            console.log(result)
             const { name, header_image, capsule_image, capsule_imagev5 } = result[appid]?.data ?? {};
             app.locals.steamGameDetails[appid] = {
                 name,
@@ -571,16 +575,26 @@ app.get('/logout', function (req, res) {
     res.redirect('/close');
 });
 
+app.get('/login/ios', function (req, res) {
+    res.redirect('/auth/steam');
+});
+
 // GET /auth/steam
 //   Use passport.authenticate() as route middleware to authenticate the
 //   request.  The first step in Steam authentication will involve redirecting
 //   the user to steamcommunity.com.  After authenticating, Steam will redirect the
 //   user back to this application at /auth/steam/return
 app.get('/auth/steam',
-    passport.authenticate('steam', { failureRedirect: '/error' }),
+    passport.authenticate('steam', { failWithError: true, failureRedirect: '/error', }),
     function (req, res) {
-        res.redirect('/');
+        console.log('Steam auth?');
+        res.redirect('/error');
     });
+
+// app.get('/auth/steam', function (req, next) {
+//     console.log('worked?', req.query, req.params)
+//     return passport.authenticate('steam', { failureRedirect: '/error', })(req, next);
+// });
 
 // GET /auth/steam/return
 //   Use passport.authenticate() as route middleware to authenticate the
@@ -588,9 +602,16 @@ app.get('/auth/steam',
 //   login page.  Otherwise, the primary route function function will be called,
 //   which, in this example, will redirect the user to the home page.
 app.get('/auth/steam/return',
-    passport.authenticate('steam', { failureRedirect: '/error' }),
+    passport.authenticate('steam', { failWithError: true, failureRedirect: '/error' }),
     function (req, res) {
-        res.redirect('/close');
+        console.log('Steam returned.');
+        const isMobile = req.useragent?.isMobile;
+        const user = isMobile && encodeURIComponent(JSON.stringify(req.user));
+        const sessionID = isMobile && uuidv4().toString();
+        if (sessionID) {
+            app.locals.sessions.add(sessionID);
+        }
+        res.redirect(isMobile ? `steamgameupdatesapp://?user=${user}&sessionID=${sessionID}` : '/close');
     });
 
 const PORT = process.env.PORT || 8080;

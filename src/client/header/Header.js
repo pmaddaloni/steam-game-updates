@@ -22,10 +22,14 @@ export default function Header() {
             const timer = setInterval(async () => {
                 if (newWindow.closed) {
                     clearInterval(timer);
-                    const result = await axios.get('/api/user');
-                    if (result?.data) {
-                        localStorage.setItem('steam-game-updates-user', JSON.stringify(result.data));
-                        dispatch({ type: 'login', value: result.data });
+                    try {
+                        const result = await axios.get('/api/user');
+                        if (result?.data) {
+                            localStorage.setItem('steam-game-updates-user', JSON.stringify(result.data));
+                            dispatch({ type: 'login', value: result.data });
+                        }
+                    } catch (err) {
+                        console.error("Error fetching user data after login:", err);
                     }
                 }
             }, 500);

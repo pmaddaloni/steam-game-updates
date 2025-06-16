@@ -45,11 +45,8 @@ passport.use(new SteamStrategy({
     returnURL: 'http://localhost:8080/auth/steam/return',
     realm: 'http://localhost:8080/',
     apiKey: config.STEAM_API_KEY,
-    passReqToCallback: true
 },
-    function (req, identifier, profile, done) {
-        // asynchronous verification, for effect...
-        console.log('Steam profile received:', profile);
+    function (identifier, profile, done) {
         process.nextTick(function () {
             // To keep the example simple, the user's Steam profile is returned to
             // represent the logged-in user.  In a typical application, you would want
@@ -271,8 +268,13 @@ setInterval(async () => {
     if (app.locals.dailyLimit > 0 && app.locals.waitBeforeRetrying === false) {
         getAllSteamGameNames().then(allGames => {
             app.locals.dailyLimit--;
-            app.locals.allSteamGames = allGames;
-            app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
+            if (allGames) {
+                app.locals.allSteamGames = allGames;
+                app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
+            } else {
+                app.locals.waitBeforeRetrying = true;
+                setTimeout(() => app.locals.waitBeforeRetrying = false, 60 * 5 * 1000);
+            }
         });
     }
 }, 15 * 60 * 1000)
@@ -432,7 +434,12 @@ app.use(session({
 // persistent login sessions.
 app.use(passport.initialize());
 app.use(passport.session());
-app.use(cors());
+app.use(cors({
+    origin: config.HOST_ORIGIN ?? 'http://localhost:3000', // Allow requests from dev
+    methods: ['GET', 'POST'],
+    credentials: true, // Allow cookies to be sent with requests
+    optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
+}));
 app.use(useragent.express());
 
 app.set('views', path.join(__dirname, './views'));
@@ -467,7 +474,8 @@ app.get('/account', ensureAuthenticated, function (req, res) {
 });
 
 app.get('/api/user', (req, res) => {
-    if (req.isAuthenticated()) {
+    if (req.isAuthenticated() ||
+        (req.headers['session-id'] != null && app.locals.sessions.has(req.headers['session-id']))) {
         res.json(req.user);
     } else {
         res.status(401).json({ message: 'Not authenticated' });
@@ -490,7 +498,7 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
                 setTimeout(() => app.locals.waitBeforeRetrying = false, (err.response.retryAfter ?? 1000 * 60 * 5) * 1000);
             });
         app.locals.dailyLimit--;
-        console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count} games`);
+        console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count ?? 'no'} games`);
         res.send(result.data?.response);
     } else {
         res.status(400).send(new Error(`The limit for requests has been reached: retry later ${req.app.locals.waitBeforeRetrying}, daily limit ${req.app.locals.dailyLimit}`));
@@ -585,7 +593,7 @@ app.get('/login/ios', function (req, res) {
 //   the user to steamcommunity.com.  After authenticating, Steam will redirect the
 //   user back to this application at /auth/steam/return
 app.get('/auth/steam',
-    passport.authenticate('steam', { failWithError: true, failureRedirect: '/error', }),
+    passport.authenticate('steam', { failureRedirect: '/error', }),
     function (req, res) {
         console.log('Steam auth?');
         res.redirect('/error');
@@ -602,7 +610,7 @@ app.get('/auth/steam',
 //   login page.  Otherwise, the primary route function function will be called,
 //   which, in this example, will redirect the user to the home page.
 app.get('/auth/steam/return',
-    passport.authenticate('steam', { failWithError: true, failureRedirect: '/error' }),
+    passport.authenticate('steam', { failureRedirect: '/error' }),
     function (req, res) {
         console.log('Steam returned.');
         const isMobile = req.useragent?.isMobile;

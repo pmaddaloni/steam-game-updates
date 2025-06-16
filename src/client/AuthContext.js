@@ -141,6 +141,7 @@ export const AuthProvider = function ({ children }) {
     useEffect(() => {
         (async () => {
             try {
+                // checking if user has a valid session on the server first
                 await axios.get('/api/user');
                 checkLocalStorage();
             } catch (e) {

@@ -17,7 +17,7 @@ export default function Header() {
 
     const login = async () => {
         const newWindow = window.open(loginLocation, 'Steam Sign-in',
-            'menubar=1,resizable=1,width=500,height=700');
+            'menubar=1,resizable=1,width=500,height=1000');
         if (newWindow) {
             const timer = setInterval(async () => {
                 if (newWindow.closed) {

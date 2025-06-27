@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../AuthContext';
 import styles from './header-styles.module.scss';
 
-const loginLocation = "http://localhost:8080/auth/steam";
-const logoutLocation = "http://localhost:8080/logout";
+const baseURL = window.location.host.includes('steamgameupdates.info') ?
+    'https://api.steamgameupdates.info' : 'http://localhost:8080';
+const loginLocation = baseURL + "/api/login";
+const logoutLocation = baseURL + "/api/logout";
 
 export default function Header() {
     const { id: userID, displayName, photos, dispatch, gameUpdates } = useAuth();
@@ -42,7 +44,7 @@ export default function Header() {
     const logout = () => {
         localStorage.removeItem('steam-game-updates-user');
         dispatch({ type: 'logout' });
-        window.open(logoutLocation, 'Steam Sign-in',
+        window.open(logoutLocation, 'Steam Sign-out',
             'menubar=1,resizable=1,width=500,height=700');
     };
 
@@ -53,8 +55,13 @@ export default function Header() {
                 <button
                     disabled={refreshDisabled}
                     className={styles.refreshGames}
-                    onClick={() => {
-                        dispatch({ type: 'refreshGames' })
+                    onClick={async () => {
+                        const result = await axios.get('/api/user');
+                        if (result?.data) {
+                            dispatch({ type: 'refreshGames' })
+                        } else {
+                            logout();
+                        }
                     }}
                 >Refresh Games</button>
             }

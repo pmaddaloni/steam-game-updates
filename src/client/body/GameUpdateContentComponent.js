@@ -59,10 +59,18 @@ function formatTextToHtml(text) {
                 } else if (word === '[/h3]') {
                     html += '</h3>';
                 } else if (word.startsWith('[url=')) {
-                    const url = 'https://' + word.slice(5, -1);
-                    html += '<a href="' + url + '" target="_blank" rel="noopener noreferrer">';
+                    const startIndex = word.indexOf('=') + 1
+                    const url = word.slice(startIndex, -1);
+                    html += `<a href=${url} target="_blank" rel="noopener noreferrer">`;
                 } else if (word === '[/url]') {
                     html += '</a>';
+                } else if (word.startsWith('[dynamiclink href=')) {
+                    const startIndex = word.indexOf('=') + 1
+                    const url = word.slice(startIndex, -1);
+                    const gameName = url.replaceAll('"', '').split('/')?.filter(Boolean)?.pop()?.replaceAll('_', ' ');
+                    html += `<p><a href=${url} target="_blank" rel="noopener noreferrer">${gameName}`;
+                } else if (word === '[/dynamiclink]') {
+                    html += '</a></p>';
                 } else if (word.startsWith('[previewyoutube=')) {
                     const youtubeVideoID = word.slice(16, -1);
                     const url = 'https://www.youtube.com/embed/' + youtubeVideoID;
@@ -94,7 +102,12 @@ function formatTextToHtml(text) {
                     html += '<details><div>';
                 } else if (word === '[/expand]') {
                     html += '</div></details>';
-                } else {
+                } else if (word.startsWith('[spoiler')) {
+                    html += '<details><summary>Spoilers!</summary><div>';
+                } else if (word === '[/spoiler]') {
+                    html += '</div></details>';
+                }
+                else {
                     html += (word ?? '') + ' ';
                 }
             }

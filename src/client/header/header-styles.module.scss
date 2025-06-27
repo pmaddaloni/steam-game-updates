@@ -12,7 +12,7 @@ $menu-side-padding: 20px;
         sans-serif;
     size: 14px;
     font-weight: 600;
-    color: #5fb4f0;
+    color: white;
     position: fixed;
     transform: translateZ(0);
     width: 100%;
@@ -23,7 +23,30 @@ $menu-side-padding: 20px;
 
     div:first-child {
         align-content: space-around;
+        display: flex;
         padding-left: $menu-side-padding;
+
+        .header-img {
+            width: 40px;
+            border-radius: 4px;
+            margin-right: 10px;
+
+            mask-image: radial-gradient(circle at center,
+                    white 50%,
+                    /* Inner part is fully visible */
+                    rgba(255, 255, 255, 0) 75%
+                    /* Outer part fades to transparent */
+                );
+            -webkit-mask-image: radial-gradient(
+                    /* For older WebKit browsers */
+                    circle at center,
+                    white 50%,
+                    rgba(255, 255, 255, 0) 75%);
+        }
+
+        * {
+            align-self: center;
+        }
     }
 
     button.refreshGames {

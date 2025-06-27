@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 
 import { useAuth } from '../AuthContext';
 import styles from './header-styles.module.scss';
+import steamGameUpdatesImg from './steam-game-updates.svg';
 
 const baseURL = window.location.host.includes('steamgameupdates.info') ?
     'https://api.steamgameupdates.info' : 'http://localhost:8080';
@@ -50,7 +51,10 @@ export default function Header() {
 
     return (
         <div className={styles.header}>
-            <div>Steam Game Updates</div>
+            <div>
+                <img className={styles['header-img']} src={steamGameUpdatesImg} alt="steam game updates logo" />
+                <div>Steam Game Updates</div>
+            </div>
             {userID !== '' &&
                 <button
                     disabled={refreshDisabled}

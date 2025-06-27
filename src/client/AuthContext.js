@@ -116,7 +116,7 @@ export const AuthProvider = function ({ children }) {
     }, [dispatch]);
 
     const getAllUserOwnedGames = useCallback(async (userID = state.id) => {
-        const result = await axios.get('api/owned-games', { params: { id: userID } })
+        const result = await axios.get('api/owned-games', { params: { id: userID, use_local: true } });
         if (result != null) {
             const ownedGames = result?.data?.games?.reduce((acc, game) => {
                 return {

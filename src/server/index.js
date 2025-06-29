@@ -122,7 +122,7 @@ function makeRequest(url, method = 'get') {
     }
 };
 
-// move this to a child process?
+// TODO: Possibly move this to a child process.
 // https://stackoverflow.com/questions/33030092/webworkers-with-a-node-js-express-application
 async function getAllSteamGameNames() {
     return app.locals.requestQueue.add(
@@ -135,7 +135,7 @@ async function getAllSteamGameNames() {
             return acc;
         }, {});
         // Remove appid duplicates that can be present in the returned list
-        // This isn't ideal but it appears to be the most efficient way to do this and is pretty fast...
+        // This isn't ideal, but it appears to be the most efficient way to do this, and is pretty fast.
         games = Array.from(new Set(games.map(a => a.appid)));
         games = games.map((appid) => ({
             appid,
@@ -160,7 +160,7 @@ app.locals.waitBeforeRetrying = false;
 const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
 app.locals.dailyLimit = lastDailyLimitUsage - 200; // Playing it safe and always giving a buffer on startup of 200 less requests so as not to overwhelm the API
 app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
-// Since passport isn't properly tracking sessions, we need to track them ourselves.
+// Since passport isn't properly tracking mobile sessions, we need to track them ourselves.
 // We generate our own UUIDs to check against for the mobile app.
 app.locals.mobileSessions = new Set(JSON.parse(mobileSessions));
 
@@ -234,7 +234,7 @@ wss.on('connection', function connection(ws) {
 });
 // END Steam Game Updates WebSocket connection
 
-// SteamWebPipes WebSocket connection
+// SteamWebPipes WebSocket setup
 let ws = null;
 do {
     console.log('Connecting to SteamWebPipes server...');
@@ -346,21 +346,25 @@ const getGameUpdates = async (externalGameID) => {
 
                 // For now, just keep track of the most recent 10 updates
                 const mostRecentEvents = result.events.slice(0, 10).map(event => event.announcement_body);
-                const mostRecentKnownEvent = app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0;
-                if (mostRecentEvents.length > 0 && mostRecentKnownEvent < mostRecentEvents[0]?.posttime) {
+                const mostRecentEventTime = mostRecentEvents[0]?.posttime ?? 0
+                const mostRecentPreviouslyKnownEventTime = app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0;
+                // Since we just got the most recent updates, this can be set to that event's post time.
+                app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
+                    Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
+                if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
                     app.locals.allSteamGamesUpdates[gameID] = mostRecentEvents
-
-                    // Only increment the index if this was not a manual request.
-                    // let clients know a new update has been processed
-                    wss.clients.forEach(client => {
-                        if (client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({
-                                appid: gameID,
-                                eventsLength: app.locals.allSteamGamesUpdates[gameID]?.length,
-                                // mostRecentUpdateTime
-                            }));
-                        }
-                    });
+                    app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
+                        // Only increment the index if this was not a manual request.
+                        // let clients know a new update has been processed
+                        wss.clients.forEach(client => {
+                            if (client.readyState === WebSocket.OPEN) {
+                                client.send(JSON.stringify({
+                                    appid: gameID,
+                                    eventsLength: app.locals.allSteamGamesUpdates[gameID]?.length,
+                                    // mostRecentUpdateTime
+                                }));
+                            }
+                        });
                 }
                 console.log(`Getting the game ${gameID}'s updates completed with ${app.locals.allSteamGamesUpdates[gameID]?.length ?? 0} event(s), with ${app.locals.dailyLimit} requests left.`);
             } else if (result.status === 429 || result.status === 403) {
@@ -601,8 +605,8 @@ app.get('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, re
         // (The gameID is the second element in the array)
         const events = app.locals.allSteamGamesUpdates[gameID];
         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime * 1000 ?? 0)) {
-            // app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] = 0; // Reset the update time for this gameID
-            app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID);
+            // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
+            app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
         }
         updates.push(
             {
@@ -622,12 +626,15 @@ app.get('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req,
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
         const events = app.locals.allSteamGamesUpdates[gameID];
-        const mostRecentUpdateTime = Math.max((app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] ?? 0), (events[0]?.posttime * 1000 ?? 0))
+        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime * 1000 ?? 0)) {
+            app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
+        }
+
+        const mostRecentUpdateTime =
+            Math.max((app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] ?? 0), (events[0]?.posttime * 1000 ?? 0))
         if (events != null && mostRecentUpdateTime > lastCheckTime) {
+            // We know for sure that there has been some activity since the client last checked
             gameIDsWithUpdates.push(gameID);
-            if (app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime * 1000 ?? 0)) {
-                app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID);
-            }
         }
     }
     res.send({ gameIDsWithUpdates });

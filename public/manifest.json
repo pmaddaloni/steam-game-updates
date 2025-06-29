@@ -3,7 +3,7 @@
   "name": "Steam Game Updates",
   "icons": [
     {
-      "src": "steam-game-updates.svg",
+      "src": "steam-game-updates-rounded.svg",
       "sizes": "256x256 128x128 64x64 32x32 24x24 16x16",
       "type": "image/svg+xml"
     },

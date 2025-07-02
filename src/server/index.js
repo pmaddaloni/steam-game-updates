@@ -340,31 +340,32 @@ const getGameUpdates = async (externalGameID) => {
             app.locals.dailyLimit--;
 
             if (result.success === 1) {
+                // Only increment the index if this was not a manual request.
                 if (externalGameID == null && priorityGameID == null) {
                     app.locals.gameIDsToCheckIndex++;
                 }
 
                 // For now, just keep track of the most recent 10 updates
                 const mostRecentEvents = result.events.slice(0, 10).map(event => event.announcement_body);
+                app.locals.allSteamGamesUpdates[gameID] = mostRecentEvents;
+
                 const mostRecentEventTime = mostRecentEvents[0]?.posttime ?? 0
                 const mostRecentPreviouslyKnownEventTime = app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0;
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
+
                 if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
-                    app.locals.allSteamGamesUpdates[gameID] = mostRecentEvents
-                    app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
-                        // Only increment the index if this was not a manual request.
-                        // let clients know a new update has been processed
-                        wss.clients.forEach(client => {
-                            if (client.readyState === WebSocket.OPEN) {
-                                client.send(JSON.stringify({
-                                    appid: gameID,
-                                    eventsLength: app.locals.allSteamGamesUpdates[gameID]?.length,
-                                    // mostRecentUpdateTime
-                                }));
-                            }
-                        });
+                    // let clients know a new update has been processed
+                    wss.clients.forEach(client => {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify({
+                                appid: gameID,
+                                eventsLength: app.locals.allSteamGamesUpdates[gameID]?.length,
+                                // mostRecentUpdateTime
+                            }));
+                        }
+                    });
                 }
                 console.log(`Getting the game ${gameID}'s updates completed with ${app.locals.allSteamGamesUpdates[gameID]?.length ?? 0} event(s), with ${app.locals.dailyLimit} requests left.`);
             } else if (result.status === 429 || result.status === 403) {

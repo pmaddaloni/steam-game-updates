@@ -137,7 +137,26 @@ $padding: 20px;
         text-align: left;
 
         img {
-            max-width: 75%;
+            max-width: 100%;
+        }
+
+        blockquote {
+            display: table;
+            box-sizing: border-box;
+            border: 1px solid #56707f;
+            border-radius: 3px;
+            padding: 12px;
+            margin: 8px;
+            font-size: 92%;
+        }
+
+        .alert {
+            vertical-align: middle;
+            width: 20px;
+            height: 20px;
+            transition-property: width, height, margin-top, margin-bottom;
+            transition-duration: .1s;
+            transition-timing-function: ease-in-out;
         }
     }
 }

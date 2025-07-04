@@ -58,6 +58,12 @@ function formatTextToHtml(text) {
                     html += '<h3>';
                 } else if (word === '[/h3]') {
                     html += '</h3>';
+                } else if (word === '[quote]') {
+                    html += '<blockquote>';
+                } else if (word === '[/quote]') {
+                    html += '</blockquote>';
+                } else if (word.trim() === ':alertalert:') {
+                    html += '<img src="https://community.fastly.steamstatic.com/economy/emoticon/alertalert" class="alert" alt="alertalert"></img>';
                 } else if (word.startsWith('[url=')) {
                     const startIndex = word.indexOf('=') + 1
                     const url = word.slice(startIndex, -1);
@@ -80,14 +86,14 @@ function formatTextToHtml(text) {
                     html += '</div>';
                 } else if (word === '[img]') {
                     isImage = true;
-                    html += '<img src=';
+                    html += '<p><img src=';
                 } else if (isImage) {
                     const url = word.replace('{STEAM_CLAN_IMAGE}',
                         'https://clan.cloudflare.steamstatic.com/images/');
                     html += '"' + url + '"';
                     isImage = false;
                 } else if (word === '[/img]') {
-                    html += ' alt="image" />';
+                    html += ' alt="image" /></p>';
                 } else if (word.startsWith('[img ')) {
                     let url = word.match(/"(.*?)"/)?.[1] ?? '';
                     url = url.replace('{STEAM_CLAN_IMAGE}',
@@ -121,41 +127,49 @@ function formatTextToHtml(text) {
 
 export default function GameUpdateContentComponent({ appid, name, update }) {
     const [imageURL, setImageURL] = useState(null);
+    const [currentAppId, setCurrentAppId] = useState(null);
     const patchNotesURL = `https://steamcommunity.com/games/${appid}/announcements/detail/${update.gid}`
 
     useEffect(() => {
+        setCurrentAppId(appid);
+        setImageURL(null);
+    }, [appid]);
+
+    useEffect(() => {
         const imageURLs = [
-            `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`,
-            `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/capsule_231x87.jpg`,
+            `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${currentAppId}/header.jpg`,
+            `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${currentAppId}/capsule_231x87.jpg`,
             'api'
         ];
 
         (async () => {
-            const validImageURL = await getViableImageURL(imageURLs, 'header_image', appid, name)
+            const validImageURL = await getViableImageURL(imageURLs, 'header_image', currentAppId, name)
             setImageURL(validImageURL);
         })();
-    }, [appid, name]);
+    }, [currentAppId, name]);
 
     return (
-        <>
-            <div className={styles['update-header']}>
-                <div className={styles['update-title']}>
-                    <div className={styles['update-headline']}>
-                        <a href={patchNotesURL} target="_blank" rel="noreferrer" >{update?.headline}</a>
+        currentAppId !== appid ?
+            null :
+            <>
+                <div className={styles['update-header']}>
+                    <div className={styles['update-title']}>
+                        <div className={styles['update-headline']}>
+                            <a href={patchNotesURL} target="_blank" rel="noreferrer" >{update?.headline}</a>
+                        </div>
+                        <div className={styles['update-post-time']} >
+                            <span>Posted on </span>
+                            <span>{new Date(update.posttime * 1000).toLocaleDateString()}</span>
+                            <span> at </span>
+                            <span>{new Date(update.posttime * 1000).toLocaleTimeString()}</span>
+                        </div>
                     </div>
-                    <div className={styles['update-post-time']} >
-                        <span>Posted on </span>
-                        <span>{new Date(update.posttime * 1000).toLocaleDateString()}</span>
-                        <span> at </span>
-                        <span>{new Date(update.posttime * 1000).toLocaleTimeString()}</span>
-                    </div>
-                </div>
-                {imageURL != null ?
-                    <img className={styles['game-capsule']} src={imageURL} alt="logo" /> :
-                    <div className={styles['game-capsule']}>{name}</div>
-                }</div>
-            <div className={styles['update-divider']} />
-            <div className={styles['update-body']}>{parse(formatTextToHtml(update?.body))}</div>
-        </ >
+                    {imageURL != null ?
+                        <img className={styles['game-capsule']} src={imageURL} alt="logo" /> :
+                        <div className={styles['game-capsule']}>{name}</div>
+                    }</div>
+                <div className={styles['update-divider']} />
+                <div className={styles['update-body']}>{parse(formatTextToHtml(update?.body))}</div>
+            </>
     )
 };

@@ -46,8 +46,8 @@ passport.deserializeUser(function (obj, done) {
 //   credentials (in this case, an OpenID identifier and profile), and invoke a
 //   callback with a user object.
 passport.use(new SteamStrategy({
-    returnURL: 'http://localhost:8080/auth/steam/return',
-    realm: 'http://localhost:8080/',
+    returnURL: 'http://192.168.110.89:8080/auth/steam/return',
+    realm: 'http://192.168.110.89:8080/',
     // returnUrl: 'http://computer.local:8080/auth/steam/return',
     // realm: 'http://computer.local:8080/',
     apiKey: config.STEAM_API_KEY,
@@ -347,14 +347,13 @@ const getGameUpdates = async (externalGameID) => {
 
                 // For now, just keep track of the most recent 10 updates
                 const mostRecentEvents = result.events.slice(0, 10).map(event => event.announcement_body);
-                app.locals.allSteamGamesUpdates[gameID] = mostRecentEvents;
-
                 const mostRecentEventTime = mostRecentEvents[0]?.posttime ?? 0
                 const mostRecentPreviouslyKnownEventTime = app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0;
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
 
+                app.locals.allSteamGamesUpdates[gameID] = mostRecentEvents;
                 if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
                     // let clients know a new update has been processed
                     wss.clients.forEach(client => {
@@ -623,7 +622,6 @@ app.get('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req,
     const gameIDs = Object.values(req.query.appids ?? {}).map(gameID => parseInt(gameID, 10));
     const lastCheckTime = parseInt(req.query.last_check_time)   // this is ms
     const gameIDsWithUpdates = [];
-
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
         const events = app.locals.allSteamGamesUpdates[gameID];

@@ -78,10 +78,11 @@ function formatTextToHtml(text) {
                 } else if (word === '[/dynamiclink]') {
                     html += '</a></p>';
                 } else if (word.startsWith('[previewyoutube=')) {
-                    const youtubeVideoID = word.slice(16, -1);
+                    const youtubeVideoID = word.slice(16, -1).replace('"', '');
+                    console.log(youtubeVideoID)
                     const url = 'https://www.youtube.com/embed/' + youtubeVideoID;
-                    html += '<div style="text-align-last:center"><iframe width="600" height="338" src="'
-                        + url + '" frameborder="0" allowfullscreen></iframe>';
+                    html += '<div style="text-align-last:center"><iframe width="600" height="338" src='
+                        + url + ' frameborder="0" allowfullscreen></iframe>';
                 } else if (word.startsWith('[/previewyoutube]')) {
                     html += '</div>';
                 } else if (word === '[img]') {

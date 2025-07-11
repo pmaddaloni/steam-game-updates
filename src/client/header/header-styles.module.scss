@@ -49,6 +49,22 @@ $menu-side-padding: 20px;
         }
     }
 
+    input.search {
+        color: white;
+        background-color: #32414c;
+        border: rgb(128, 128, 128) 1px solid;
+        border-radius: 4px;
+        font-family: "Open Sans", sans-serif;
+        padding: 0 10px;
+
+        &:focus {
+            outline: none;
+            border-color: #5fb4f0;
+            color: #fff;
+            transition: all 0.2s ease-in-out;
+        }
+    }
+
     button.refreshGames {
         cursor: pointer;
         background: transparent;
@@ -64,13 +80,16 @@ $menu-side-padding: 20px;
         user-select: none;
         appearance: none;
 
-        &:hover {
+        &:hover,
+        &:focus {
+            outline: none;
             background-color: #5fb4f0;
             color: #fff;
             transition: all 0.2s ease-in-out;
         }
 
-        &:active {
+        &:active,
+        &.pseudo-active {
             background-color: #b8daf3;
             color: #8e7f7f;
             transition: all 0.2s ease-in-out;

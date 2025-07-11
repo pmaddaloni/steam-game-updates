@@ -158,3 +158,25 @@ export async function getViableImageURL(imageURLs, imageKey, appid, name) {
     } while (validImageURL === null && localImageURLs.length > 0)
     return validImageURL;
 }
+
+export function debounce(fn, delay = 55000, runOnce = false) {
+    let timer = null;
+
+    return function (...args) {
+        if (timer != null) {
+            clearTimeout(timer);
+        }
+
+        if (runOnce && timer == null) {
+            fn.apply(this, args);
+            timer = setTimeout(() => {
+                timer = null;
+            }, delay);
+        } else {
+            timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = null;
+            }, delay);
+        }
+    };
+}

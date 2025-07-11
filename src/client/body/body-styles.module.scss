@@ -52,6 +52,7 @@ $padding: 20px;
     top: 0;
     padding: 20px 0;
     background-color: #282c34;
+    margin-right: 30px;
 
     div {
         padding: 0px 10px 0px 0px;
@@ -75,6 +76,7 @@ $padding: 20px;
     font-family: "Open Sans", sans-serif;
     color: rgb(221, 221, 221);
     margin-bottom: 50px;
+    opacity: 0;
 
     a {
         color: rgb(0, 175, 244);
@@ -175,12 +177,29 @@ $padding: 20px;
 
     .game-list-header {
         display: flex;
-        justify-content: space-around;
         position: sticky;
         z-index: 1;
         top: 0;
         padding: 20px 0;
         background-color: #282c34;
+        min-width: 400px;
+        margin: 0 30px;
+        text-align: center;
+
+        .patch-title-header {
+            &:first-child {
+                width: 150px;
+            }
+
+            &:nth-child(2) {
+                width: fit-content;
+                min-width: 155px;
+            }
+
+            &:last-child {
+                width: 250px;
+            }
+        }
     }
 
     .patch-date {
@@ -201,6 +220,10 @@ $padding: 20px;
         margin-top: auto;
         margin-bottom: auto;
         text-align: center;
+    }
+
+    .empty-game {
+        height: 59px;
     }
 
     .game {

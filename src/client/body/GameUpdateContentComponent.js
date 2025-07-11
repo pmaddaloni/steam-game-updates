@@ -1,6 +1,6 @@
 import parse from 'html-react-parser';
 import { useEffect, useState } from 'react';
-import { getViableImageURL } from '../../utilities/utils';
+import { debounce, getViableImageURL } from '../../utilities/utils';
 
 import styles from './body-styles.module.scss';
 
@@ -79,7 +79,6 @@ function formatTextToHtml(text) {
                     html += '</a></p>';
                 } else if (word.startsWith('[previewyoutube=')) {
                     const youtubeVideoID = word.slice(16, -1).replace('"', '');
-                    console.log(youtubeVideoID)
                     const url = 'https://www.youtube.com/embed/' + youtubeVideoID;
                     html += '<div style="text-align-last:center"><iframe width="600" height="338" src='
                         + url + ' frameborder="0" allowfullscreen></iframe>';
@@ -113,8 +112,9 @@ function formatTextToHtml(text) {
                     html += '<details><summary>Spoilers!</summary><div>';
                 } else if (word === '[/spoiler]') {
                     html += '</div></details>';
-                }
-                else {
+                } else if (word === '[carousel]' || word === '[/carousel]') {
+                    continue;
+                } else {
                     html += (word ?? '') + ' ';
                 }
             }
@@ -126,31 +126,41 @@ function formatTextToHtml(text) {
     return html;
 };
 
+const resetOpacity = debounce(() => {
+    const element = document.getElementById('update-content');
+    if (element) {
+        setTimeout(() => {
+            element.style.transition = 'opacity 300ms linear';
+            element.style.opacity = 1
+        }, 50);
+    }
+}, 400, true);
+
 export default function GameUpdateContentComponent({ appid, name, update }) {
     const [imageURL, setImageURL] = useState(null);
-    const [currentAppId, setCurrentAppId] = useState(null);
+    const [currentGID, setCurrentGID] = useState(update.gid);
     const patchNotesURL = `https://steamcommunity.com/games/${appid}/announcements/detail/${update.gid}`
 
     useEffect(() => {
-        setCurrentAppId(appid);
-        setImageURL(null);
-    }, [appid]);
+        setCurrentGID(update.gid);
+        resetOpacity();
+    }, [update.gid]);
 
     useEffect(() => {
         const imageURLs = [
-            `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${currentAppId}/header.jpg`,
-            `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${currentAppId}/capsule_231x87.jpg`,
+            `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`,
+            `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/capsule_231x87.jpg`,
             'api'
         ];
 
         (async () => {
-            const validImageURL = await getViableImageURL(imageURLs, 'header_image', currentAppId, name)
+            const validImageURL = await getViableImageURL(imageURLs, 'header_image', appid, name)
             setImageURL(validImageURL);
         })();
-    }, [currentAppId, name]);
+    }, [appid, name]);
 
     return (
-        currentAppId !== appid ?
+        currentGID !== update.gid ?
             null :
             <>
                 <div className={styles['update-header']}>

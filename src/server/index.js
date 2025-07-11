@@ -63,8 +63,12 @@ passport.use(new SteamStrategy({
         // check for 'JSON response invalid, your API key is most likely wrong'
         process.nextTick(function () {
             user.identifier = identifier;
-            user.redirect_uri = req.session.oauthRedirectUri;
-            user.state = req.session.state;
+            if (req.session.oauthRedirectUri) {
+                user.redirect_uri = req.session.oauthRedirectUri;
+            }
+            if (req.session.state) {
+                user.state = req.session.state;
+            }
             return done(null, user);
         });
     }
@@ -72,23 +76,42 @@ passport.use(new SteamStrategy({
 
 const DAILY_LIMIT = 100000;   // should be 100k, but for testing purposes it's lower for now
 const WAIT_TIME = 1000;     // Space out requests to at most 1 request per second
-const NUMBER_OFREQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per WAIT_TIME
+const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per WAIT_TIME
 
-// Check if storage folder exists, and create if not.
-const directoryPath = path.join(__dirname, './storage/passport-sessions');
-if (!fs.existsSync(directoryPath)) {
+// Check if storage folders exist, and create if not.
+const passportSessionsDirectoryPath = path.join(__dirname, './storage/passport-sessions');
+if (!fs.existsSync(passportSessionsDirectoryPath)) {
     try {
-        fs.mkdirSync(directoryPath, { recursive: true });
-        console.log(`Directory '${directoryPath}' created successfully.`);
+        fs.mkdirSync(passportSessionsDirectoryPath, { recursive: true });
+        console.log(`Directory '${passportSessionsDirectoryPath}' created successfully.`);
     } catch (err) {
         console.error('Error creating directory. Must abort application and fix - check permissions.', err);
-        process.exit(1); // Exit the application if the directory cannot be created
+        process.exit(1);
     }
 }
 
-const gameUpdatesFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdates.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/allSteamGamesUpdates.json'), { encoding: 'utf8', flag: 'r' })
-    : '{}';    // {[appid]: events[]}
+const allSteamGameUpdatesDirectoryPath = path.join(__dirname, './storage/all-steam-game-updates');
+if (!fs.existsSync(allSteamGameUpdatesDirectoryPath)) {
+    try {
+        fs.mkdirSync(allSteamGameUpdatesDirectoryPath, { recursive: true });
+        console.log(`Directory '${allSteamGameUpdatesDirectoryPath}' created successfully.`);
+    } catch (err) {
+        console.error('Error creating directory. Must abort application and fix - check permissions.', err);
+        process.exit(1);
+    }
+}
+// End storage folders.
+
+let gameUpdatesFromFile = {};   // {[appid]: events[]}
+fs.readdirSync(allSteamGameUpdatesDirectoryPath).forEach(fileName => {
+    if (path.extname(fileName) === '.json') {
+        const result =
+            fs.readFileSync(path.join(__dirname, `./storage/all-steam-game-updates/${fileName}`),
+                { encoding: 'utf8', flag: 'r' }) || '{}';
+        const parsedResult = JSON.parse(result);
+        gameUpdatesFromFile = { ...gameUpdatesFromFile, ...parsedResult };
+    }
+});
 const allSteamGamesUpdatesPossiblyChangedFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json'), { encoding: 'utf8', flag: 'r' })
     : '{}';    // {[appid]: POSSIBLE most recent update time}
@@ -113,8 +136,10 @@ const userOwnedGames = environment === 'dev' &&
     : '{}';
 
 const app = express();
-app.locals.requestQueue = new PQueue({ interval: WAIT_TIME, intervalCap: NUMBER_OFREQUESTS_PER_WAIT_TIME });
+app.locals.requestQueue = new PQueue({ interval: WAIT_TIME, intervalCap: NUMBER_OF_REQUESTS_PER_WAIT_TIME });
 app.locals.gameIDsToCheckPriorityQueue = new PriorityQueue();
+
+console.log('say what', config)
 
 function makeRequest(url, method = 'get') {
     return async () => {
@@ -149,7 +174,7 @@ async function getAllSteamGameNames() {
 }
 
 app.locals.allSteamGames = await getAllSteamGameNames();
-app.locals.allSteamGamesUpdates = JSON.parse(gameUpdatesFromFile);
+app.locals.allSteamGamesUpdates = gameUpdatesFromFile;
 app.locals.steamGameDetails = JSON.parse(steamGameDetails);
 app.locals.allSteamGamesUpdatesPossiblyChanged = JSON.parse(allSteamGamesUpdatesPossiblyChangedFromFile);
 app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
@@ -172,7 +197,6 @@ const ensureAuthenticated = function (req, res, next) {
         req.user, req.headers['session-id'],
         app.locals.mobileSessions.has(req.headers['session-id']));
     res.sendStatus(429);
-    // res.redirect('/');
 }
 
 async function getGameIDUpdates(gameID, prioritizedRequest = false) {
@@ -186,7 +210,7 @@ async function getGameIDUpdates(gameID, prioritizedRequest = false) {
     try {
         const response =
             await app.locals.requestQueue.add(
-                makeRequest(`https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=${gameID}&count_before=0&count_after=100&event_type_filter=13,12`),
+                makeRequest(`https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=${gameID}&count_before=0&count_after=100`),
                 { priority: prioritizedRequest ? 2 : 0 }
             );
         result = response.data;
@@ -345,10 +369,10 @@ const getGameUpdates = async (externalGameID) => {
                     app.locals.gameIDsToCheckIndex++;
                 }
 
-                // For now, just keep track of the most recent 10 updates
-                const mostRecentEvents = result.events.slice(0, 10).map(event => event.announcement_body);
-                const mostRecentEventTime = mostRecentEvents[0]?.posttime ?? 0
-                const mostRecentPreviouslyKnownEventTime = app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0;
+                // To keep track of the most recent 10 updates - .slice(0, 10)
+                const mostRecentEvents = result.events.map(event => event.announcement_body);
+                const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0) * 1000;
+                const mostRecentPreviouslyKnownEventTime = (app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0) * 1000;
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
@@ -402,8 +426,8 @@ const getGameUpdates = async (externalGameID) => {
 // Continuously fetch game's updates every 1 second iterating over the gameIDsToCheck array.
 // Constraint of 100000k allows for an average of one request every 0.86 seconds over 24 hours.
 // Constraint of 200 per 5 minutes restricts to no more than one request every 1.5 seconds within any 5 - minute window.
-// We go with 1.6 seconds to be on the safe side and build in a little wiggle room for other requests.
-setInterval(getGameUpdates, 1000 * 1.6);
+// 200 constraint doesn't appear to affect this request...
+setInterval(getGameUpdates, 1000);
 
 // Save the results every minute so we don't lose them if the server restarts/crashes.
 // Write to file for now, but future optimization could be to use something like mongo db.
@@ -415,74 +439,90 @@ setInterval(() => {
         if (app.locals.dailyLimit === -1) {
             app.locals.dailyLimit = -2;
         }
-        fs.writeFile(path.join(__dirname, './storage/allSteamGamesUpdates.json'),
-            JSON.stringify(app.locals.allSteamGamesUpdates), (err) => {
-                if (err) {
-                    console.error('Error writing to file allSteamGamesUpdates.json', err);
-                } else {
-                    console.log('File `allSteamGamesUpdates.json` written successfully');
-                }
-            });
-        fs.writeFile(path.join(__dirname, './storage/gameIDsWithErrors.json'),
-            JSON.stringify(Array.from(app.locals.gameIDsWithErrors)), (err) => {
-                if (err) {
-                    console.error('Error writing to file gameIDsWithErrors.json', err);
-                } else {
-                    console.log('File `gameIDsWithErrors.json` written successfully');
-                }
-            });
-        fs.writeFile(path.join(__dirname, './storage/gameIDsToCheckIndex.json'),
-            app.locals.gameIDsToCheckIndex.toString(), (err) => {
-                if (err) {
-                    console.error('Error writing to file gameIDsToCheckIndex.json', err);
-                } else {
-                    console.log('File `gameIDsToCheckIndex.json` written successfully');
-                }
-            });
-        fs.writeFile(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json'),
-            JSON.stringify(app.locals.allSteamGamesUpdatesPossiblyChanged), (err) => {
-                if (err) {
-                    console.error('Error writing to file allSteamGamesUpdatesPossiblyChanged.json', err);
-                } else {
-                    console.log('File `allSteamGamesUpdatesPossiblyChanged.json` written successfully');
-                }
-            });
-        fs.writeFile(path.join(__dirname, './storage/serverRefreshTimeAndCount.json'),
-            JSON.stringify([app.locals.lastServerRefreshTime, app.locals.dailyLimit]), (err) => {
-                if (err) {
-                    console.error('Error writing to file serverRefreshTimeAndCount.json', err);
-                } else {
-                    console.log('File `serverRefreshTimeAndCount.json` written successfully');
-                }
-            });
-        fs.writeFile(path.join(__dirname, './storage/steamGameDetails.json'),
-            JSON.stringify(app.locals.steamGameDetails), (err) => {
-                if (err) {
-                    console.error('Error writing to file steamGameDetails.json', err);
-                } else {
-                    console.log('File `steamGameDetails.json` written successfully');
-                }
-            });
-        fs.writeFile(path.join(__dirname, './storage/mobileSessions.json'),
-            JSON.stringify(Array.from(app.locals.mobileSessions)), (err) => {
-                if (err) {
-                    console.error('Error writing to file mobileSessions.json', err);
-                } else {
-                    console.log('File `mobileSessions.json` written successfully');
-                }
-            });
-        if (environment === 'dev' && userOwnedGames) {
-            fs.writeFile(path.join(__dirname, './storage/userOwnedGames.json'),
-                JSON.stringify(app.locals.userOwnedGames), (err) => {
+        // TODO: Need to put this into a folder and have multiple files. TODO
+        const entries = Object.entries(app.locals.allSteamGamesUpdates);
+        const chunkSize = 5000;
+        try {
+            for (let i = 0; i < entries.length; i += chunkSize) {
+                const nextChunk = i + chunkSize;
+                const subsetOfGames = entries.slice(i, nextChunk);
+                const chunk = Object.fromEntries(subsetOfGames)
+                const fileName = `allSteamGamesUpdates-${nextChunk}`;
+                fs.writeFile(path.join(__dirname, `./storage/all-steam-game-updates/${fileName}.json`),
+                    JSON.stringify(chunk), (err) => {
+                        if (err) {
+                            console.error(`Error writing to file ${fileName}.json`, err);
+                        } else {
+                            console.log(`File \`${fileName}.json\` written successfully`);
+                        }
+                    });
+            }
+
+            fs.writeFile(path.join(__dirname, './storage/gameIDsWithErrors.json'),
+                JSON.stringify(Array.from(app.locals.gameIDsWithErrors)), (err) => {
                     if (err) {
-                        console.error('Error writing to file userOwnedGames.json', err);
+                        console.error('Error writing to file gameIDsWithErrors.json', err);
                     } else {
-                        console.log('File `userOwnedGames.json` written successfully');
+                        console.log('File `gameIDsWithErrors.json` written successfully');
                     }
                 });
+            fs.writeFile(path.join(__dirname, './storage/gameIDsToCheckIndex.json'),
+                app.locals.gameIDsToCheckIndex.toString(), (err) => {
+                    if (err) {
+                        console.error('Error writing to file gameIDsToCheckIndex.json', err);
+                    } else {
+                        console.log('File `gameIDsToCheckIndex.json` written successfully');
+                    }
+                });
+            fs.writeFile(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json'),
+                JSON.stringify(app.locals.allSteamGamesUpdatesPossiblyChanged), (err) => {
+                    if (err) {
+                        console.error('Error writing to file allSteamGamesUpdatesPossiblyChanged.json', err);
+                    } else {
+                        console.log('File `allSteamGamesUpdatesPossiblyChanged.json` written successfully');
+                    }
+                });
+            fs.writeFile(path.join(__dirname, './storage/serverRefreshTimeAndCount.json'),
+                JSON.stringify([app.locals.lastServerRefreshTime, app.locals.dailyLimit]), (err) => {
+                    if (err) {
+                        console.error('Error writing to file serverRefreshTimeAndCount.json', err);
+                    } else {
+                        console.log('File `serverRefreshTimeAndCount.json` written successfully');
+                    }
+                });
+            fs.writeFile(path.join(__dirname, './storage/steamGameDetails.json'),
+                JSON.stringify(app.locals.steamGameDetails), (err) => {
+                    if (err) {
+                        console.error('Error writing to file steamGameDetails.json', err);
+                    } else {
+                        console.log('File `steamGameDetails.json` written successfully');
+                    }
+                });
+            fs.writeFile(path.join(__dirname, './storage/mobileSessions.json'),
+                JSON.stringify(Array.from(app.locals.mobileSessions)), (err) => {
+                    if (err) {
+                        console.error('Error writing to file mobileSessions.json', err);
+                    } else {
+                        console.log('File `mobileSessions.json` written successfully');
+                    }
+                });
+            if (environment === 'dev' && userOwnedGames) {
+                fs.writeFile(path.join(__dirname, './storage/userOwnedGames.json'),
+                    JSON.stringify(app.locals.userOwnedGames), (err) => {
+                        if (err) {
+                            console.error('Error writing to file userOwnedGames.json', err);
+                        } else {
+                            console.log('File `userOwnedGames.json` written successfully');
+                        }
+                    });
+            }
+        } catch (err) {
+            if (err) {
+                console.error('Error writing to files occurred...', err);
+            }
         }
     }
-}, 1 * 60 * 1000);
+}, 5 * 60 * 1000);
 
 const FileStore = sessionfilestore(session);
 app.use(session({
@@ -501,6 +541,7 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(cors({
+    // origin: config.HOST_ORIGIN ?? 'http://192.168.110.89:3000', // Allow requests from dev
     origin: config.HOST_ORIGIN ?? 'http://localhost:3000', // Allow requests from dev
     methods: ['GET', 'POST'],
     credentials: true, // Allow cookies to be sent with requests
@@ -630,7 +671,7 @@ app.get('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req,
         }
 
         const mostRecentUpdateTime =
-            Math.max((app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] ?? 0), (events[0]?.posttime * 1000 ?? 0))
+            Math.max((app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] ?? 0), (events?.[0]?.posttime * 1000 ?? 0))
         if (events != null && mostRecentUpdateTime > lastCheckTime) {
             // We know for sure that there has been some activity since the client last checked
             gameIDsWithUpdates.push(gameID);
@@ -707,7 +748,7 @@ app.get('/auth/steam', (req, res, next) => {
 //     return passport.authenticate('steam', { failureRedirect: '/error', })(req, next);
 // });
 
-function authenticateMiddleware(req, res, next) {
+/* function authenticateMiddleware(req, res, next) {
     console.log('\n\nauthenticateMiddleware:', req.session, req.authInfo, req.state, req.query);
     passport.authenticate('steam', { authInfo: true, failureRedirect: '/error' }, (err, user, info) => {
         console.log('\n\nauthenticateMiddleware authenticated:', user, info, req.authInfo, req.state, req.session);
@@ -724,7 +765,7 @@ function authenticateMiddleware(req, res, next) {
         req.user = user;
         next();
     })(req, res, next);
-}
+} */
 
 // GET /auth/steam/return
 //   Use passport.authenticate() as route middleware to authenticate the
@@ -737,7 +778,7 @@ app.get('/auth/steam/return',
     function (req, res) {
         const redirect_uri = req.user?.redirect_uri;
         const state = req.user?.state;
-        console.log('\n\n/auth/steam/return:', req.user, req.session,);
+        console.log('\n\n/auth/steam/return:', req.user, req.session, !!redirect_uri && !!state);
 
         if (redirect_uri && state) {
             delete req.user.redirect_uri;

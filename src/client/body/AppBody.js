@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../AuthContext';
 import styles from './body-styles.module.scss';
 import GameUpdateContentComponent from './GameUpdateContentComponent';
@@ -8,34 +8,47 @@ import logo from './steam-logo.svg';
 
 export default function Body() {
     const itemsPerPage = 25;
-    const { id, gameUpdates, ownedGames } = useAuth();
+    const { id, gameUpdates, ownedGames, filteredList } = useAuth();
     const [displayedItems, setDisplayedItems] = useState([]);
     const [startIndex, setStartIndex] = useState(0);
     const [selectedGame, setSelectedGame] = useState(null);
+    const timeoutId = useRef(null)
     const gameComponents = useMemo(() => {
         const shownEvents = {};     // {[appid]: # of times it's in the list}
-        return gameUpdates.map(([, appid], index) => {
-            const { events, name } = ownedGames[appid] ?? {};
+        let index = 0;
+        return gameUpdates.map(([, appid]) => {
+            const { events, name } = (filteredList ?? ownedGames)[appid] ?? {};
             if (events != null && events.length > 0) {
                 shownEvents[appid] = (shownEvents[appid] ?? -1) + 1
                 const update = events[shownEvents[appid]];
                 return update && (
                     <GameUpdateListComponent
+                        eventIndex={shownEvents[appid]}
                         key={appid + '-' + update?.posttime}
                         appid={appid}
                         name={name}
                         update={update}
                         setSelectedGame={setSelectedGame}
                         selectedGame={selectedGame}
-                        index={index}
-                        eventIndex={shownEvents[appid]}
+                        index={index++}
                     />
                 );
             }
             return null;
-        });
+        }).filter(Boolean).concat(
+            <div
+                key='filler-list-item'
+                className={styles['empty-game']}
+            />
+        );
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [gameUpdates]);
+    }, [gameUpdates, filteredList]);
+
+    useEffect(() => {
+        setSelectedGame(null);
+        setDisplayedItems([]);
+        setStartIndex(itemsPerPage);
+    }, [filteredList]);
 
     useEffect(() => {
         setDisplayedItems([...gameComponents.slice(0, itemsPerPage)]);
@@ -63,7 +76,12 @@ export default function Body() {
                 });
             }
         }
-    }, [selectedGame, displayedItems]);
+        const element = document.getElementById('update-content');
+        if (element) {
+            element.style.transition = null;
+            element.style.opacity = 0;
+        }
+    }, [selectedGame]);
 
     function showCursor() {
         document.body.style.pointerEvents = 'all';
@@ -73,14 +91,14 @@ export default function Body() {
         document.body.style.pointerEvents = 'none';
 
         // Use a ref for timeoutId to persist across renders
-        if (handleKeyDown.timeoutId) {
-            clearTimeout(handleKeyDown.timeoutId);
+        if (timeoutId.current) {
+            clearTimeout(timeoutId.current);
+            timeoutId.current = null;
         }
-        handleKeyDown.timeoutId = setTimeout(showCursor, 5000);
+        timeoutId.current = setTimeout(showCursor, 5000);
 
         const selectedIndex = selectedGame?.index ?? -1;
         let newIndex = selectedIndex;
-
         if (event.key === 'ArrowUp') {
             newIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
         } else if (event.key === 'ArrowDown') {
@@ -98,11 +116,10 @@ export default function Body() {
     }, [displayedItems, ownedGames, selectedGame]);
 
     useEffect(() => {
-        let timeoutId = null;
-
         document.addEventListener('mousemove', () => {
             showCursor();
-            clearTimeout(timeoutId);
+            clearTimeout(timeoutId.current);
+            timeoutId.current = null;
         })
         window.addEventListener('keydown', handleKeyDown);
 
@@ -157,9 +174,9 @@ export default function Body() {
                     <div className={styles.container}>
                         <div id="game-list" className={styles['game-list']}>
                             <div className={styles['game-list-header']}>
-                                <div className={styles['patch-date']}>Date</div>
-                                <div className={styles['game-title']}>Game</div>
-                                <div className={styles['patch-title']}>Title</div>
+                                <div className={styles['patch-title-header']}>Date</div>
+                                <div className={styles['patch-title-header']}>Game</div>
+                                <div className={styles['patch-title-header']}>Title</div>
                             </div>
                             {displayedItems}
                         </div>
@@ -167,16 +184,20 @@ export default function Body() {
                             <div className={styles["container-header"]}>
                                 <div className={styles['update']}>Update</div>
                             </div>
-                            <div className={styles['update-content']}>{
-                                selectedGame != null ?
-                                    <GameUpdateContentComponent
-                                        appid={selectedGame.appid}
-                                        update={selectedGame.update}
-                                        name={ownedGames[selectedGame.appid].name}
-                                    />
-                                    :
-                                    'Click or use the keyboard to see a game\'s update details!'
-                            }
+                            <div
+                                id='update-content'
+                                data-gid={selectedGame?.update?.gid ?? ''}
+                                className={styles['update-content']}
+                            >{
+                                    selectedGame != null ?
+                                        <GameUpdateContentComponent
+                                            appid={selectedGame.appid}
+                                            update={selectedGame.update}
+                                            name={ownedGames[selectedGame.appid].name}
+                                        />
+                                        :
+                                        'Click or use the keyboard to see a game\'s update details!'
+                                }
                             </div>
                         </div>
                     </div>

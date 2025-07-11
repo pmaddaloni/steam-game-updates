@@ -6,17 +6,13 @@ import styles from './header-styles.module.scss';
 import steamGameUpdatesImg from './steam-game-updates.svg';
 
 const baseURL = window.location.host.includes('steamgameupdates.info') ?
-    'https://api.steamgameupdates.info' : 'http://localhost:8080';
+    'https://api.steamgameupdates.info' : 'http://192.168.110.89:8080';
 const loginLocation = baseURL + "/api/login";
 const logoutLocation = baseURL + "/api/logout";
 
 export default function Header() {
     const { id: userID, displayName, photos, dispatch, gameUpdates } = useAuth();
-    const [refreshDisabled, setRefreshDisabled] = useState(true);
-
-    useEffect(() => {
-        setRefreshDisabled(gameUpdates.length === 0);
-    }, [gameUpdates])
+    const [interactionDisabled, setInteractionDisabled] = useState(true);
 
     const login = async () => {
         const newWindow = window.open(loginLocation, 'Steam Sign-in',
@@ -49,6 +45,54 @@ export default function Header() {
             'menubar=1,resizable=1,width=500,height=700');
     };
 
+    const refreshGames = async () => {
+        try {
+            const result = await axios.get('/api/user');
+            if (result?.data) {
+                dispatch({ type: 'refreshGames' })
+            }
+        } catch (e) {
+            alert('Your login has expired. Please log in again.');
+            logout();
+        }
+    };
+
+    const scrollToTopOfList = (value, target) => {
+        if (target) {
+            target.blur();
+        }
+        const searchBar = document.getElementById("game-list");
+        searchBar?.scrollTo({
+            top: -100,
+            behavior: 'instant',
+        });
+        setTimeout(dispatch({ type: 'updateSearch', value }), 2000)
+    }
+
+    useEffect(() => {
+        setInteractionDisabled(gameUpdates.length === 0);
+    }, [gameUpdates])
+
+    useEffect(() => {
+        function handleKeyDown(event) {
+            const searchBar = document.getElementById('search-bar');
+            if (event.key === 'r' && document.activeElement !== searchBar) {
+                const refreshButton = document.getElementById('refresh-button');
+                refreshButton.classList.add(styles['pseudo-active']);
+                setTimeout(() => refreshButton.classList.remove(styles['pseudo-active']), 200);
+                refreshGames();
+            } else if (event.key === 's' && document.activeElement !== searchBar) {
+                event.preventDefault();
+                searchBar?.focus()
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []);
+
     return (
         <div className={styles.header}>
             <div>
@@ -56,18 +100,42 @@ export default function Header() {
                 <div>Steam Game Updates</div>
             </div>
             {userID !== '' &&
-                <button
-                    disabled={refreshDisabled}
-                    className={styles.refreshGames}
-                    onClick={async () => {
-                        const result = await axios.get('/api/user');
-                        if (result?.data) {
-                            dispatch({ type: 'refreshGames' })
-                        } else {
-                            logout();
-                        }
-                    }}
-                >Refresh Games</button>
+                <>
+                    <input
+                        title="Press the 's' hotkey to start searching"
+                        id="search-bar"
+                        placeholder='Search your updates by game title...'
+                        disabled={interactionDisabled}
+                        autoComplete="off"
+                        autoCapitalize="off"
+                        className={styles.search}
+                        type="text"
+                        name="search"
+                        maxLength="100"
+                        size="100"
+                        onFocus={e => e.target.select()}
+                        onChange={({ target }) => {
+                            if (target.value === '') {
+                                scrollToTopOfList(target.value, target);
+                            }
+                        }}
+                        onBlur={({ target }) => {
+                            scrollToTopOfList(target.value);
+                        }}
+                        onKeyUp={({ code, target }) => {
+                            if (code === 'Enter') {
+                                scrollToTopOfList(target.value, target);
+                            }
+                        }}
+                    />
+                    <button
+                        title="Press the 'r' hotkey to refresh your updates"
+                        id="refresh-button"
+                        disabled={interactionDisabled}
+                        className={styles.refreshGames}
+                        onClick={refreshGames}
+                    >Refresh Games</button>
+                </>
             }
             {userID !== '' ?
                 <div className={styles.menu} >

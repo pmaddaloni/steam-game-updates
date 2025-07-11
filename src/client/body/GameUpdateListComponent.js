@@ -6,7 +6,12 @@ export default function GameUpdateListComponent(props) {
     const { appid, name, update, setSelectedGame, index } = props;
     const [imageURL, setImageURL] = useState(null);
     const changeSelectedGame = () => {
-        setSelectedGame({ appid, update, index });
+        const element = document.getElementById('update-content');
+        if (element && element.dataset.gid !== update.gid) {
+            element.style.transition = null;
+            element.style.opacity = 0;
+            setSelectedGame({ appid, update, index });
+        }
     };
 
     useEffect(() => {

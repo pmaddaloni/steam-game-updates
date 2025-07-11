@@ -14,7 +14,8 @@ const defaultState = {
     provider: '',
     photos: [],
     ownedGames: {},     // { [appid]: {name, events} }
-    gameUpdates: []     // [ [updateTime, appid], ... ]
+    gameUpdates: [],     // [ [updateTime, appid], ... ]
+    filteredList: null,
 };
 
 const reducer = (state, { type, value }) => {
@@ -34,6 +35,18 @@ const reducer = (state, { type, value }) => {
             let newGameUpdates = state.gameUpdates.concat(value);
             newGameUpdates = newGameUpdates.sort((a, b) => b[0] - a[0]);
             return { ...state, gameUpdates: newGameUpdates };
+        case 'updateSearch':
+            const searchTerm = value.toLowerCase().trim();
+            const filteredList = searchTerm === '' ? null :
+                Object.entries(state.ownedGames).reduce((acc, [key, value]) => {
+                    const result = { ...acc };
+                    const { name } = value
+                    if (name.toLowerCase().includes(searchTerm)) {
+                        result[key] = value
+                    }
+                    return result;
+                }, {});
+            return { ...state, filteredList }
         default: return state;
     };
 };
@@ -71,7 +84,8 @@ export const AuthProvider = function ({ children }) {
     useEffect(() => {
         if (state.id !== '') {
             if (steamGameUpdatesSocket == null) {
-                steamGameUpdatesSocket = new webSocketConnectWithRetry('ws://localhost:8081/');
+                // UPDATE THIS FROM DEVVVV
+                steamGameUpdatesSocket = new webSocketConnectWithRetry(`ws://${WEB_SOCKET_PATH}`);
             }
             steamGameUpdatesSocket.onmessage = (event) => {
                 // One of two types of messages is being received here:

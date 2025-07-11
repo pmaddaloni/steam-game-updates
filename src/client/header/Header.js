@@ -78,8 +78,10 @@ export default function Header() {
             const searchBar = document.getElementById('search-bar');
             if (event.key === 'r' && document.activeElement !== searchBar) {
                 const refreshButton = document.getElementById('refresh-button');
-                refreshButton.classList.add(styles['pseudo-active']);
-                setTimeout(() => refreshButton.classList.remove(styles['pseudo-active']), 200);
+                if (refreshButton) {
+                    refreshButton.classList.add(styles['pseudo-active']);
+                    setTimeout(() => refreshButton.classList.remove(styles['pseudo-active']), 200);
+                }
                 refreshGames();
             } else if (event.key === 's' && document.activeElement !== searchBar) {
                 event.preventDefault();
@@ -91,6 +93,7 @@ export default function Header() {
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (

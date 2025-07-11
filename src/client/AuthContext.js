@@ -3,6 +3,8 @@ import { createContext, useCallback, useContext, useEffect, useReducer } from 'r
 import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
+const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
+    'https://api.steamgameupdates.info/websocket' : process.env.REACT_APP_WEBSOCKET || 'localhost:8081';
 
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);

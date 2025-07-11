@@ -46,10 +46,8 @@ passport.deserializeUser(function (obj, done) {
 //   credentials (in this case, an OpenID identifier and profile), and invoke a
 //   callback with a user object.
 passport.use(new SteamStrategy({
-    returnURL: 'http://192.168.110.89:8080/auth/steam/return',
-    realm: 'http://192.168.110.89:8080/',
-    // returnUrl: 'http://computer.local:8080/auth/steam/return',
-    // realm: 'http://computer.local:8080/',
+    returnURL: (config.HOST_ORIGIN || 'http://localhost') + ':8080/auth/steam/return',
+    realm: (config.HOST_ORIGIN || 'http://localhost') + ':8080/',
     apiKey: config.STEAM_API_KEY,
     passReqToCallback: true,
 },
@@ -138,8 +136,6 @@ const userOwnedGames = environment === 'dev' &&
 const app = express();
 app.locals.requestQueue = new PQueue({ interval: WAIT_TIME, intervalCap: NUMBER_OF_REQUESTS_PER_WAIT_TIME });
 app.locals.gameIDsToCheckPriorityQueue = new PriorityQueue();
-
-console.log('say what', config)
 
 function makeRequest(url, method = 'get') {
     return async () => {
@@ -542,7 +538,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 app.use(cors({
     // origin: config.HOST_ORIGIN ?? 'http://192.168.110.89:3000', // Allow requests from dev
-    origin: config.HOST_ORIGIN ?? 'http://localhost:3000', // Allow requests from dev
+    origin: (config.HOST_ORIGIN || 'http://localhost') + ':3000', // Allow requests from dev
     methods: ['GET', 'POST'],
     credentials: true, // Allow cookies to be sent with requests
     optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
@@ -640,7 +636,6 @@ app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
 app.get('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const gameIDs = Object.values(req.query.appids ?? {}).map(gameID => parseInt(gameID, 10));
     const updates = []; // An array of {appid: gameID, events: []} in order of most recently updated
-
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
         // (The gameID is the second element in the array)

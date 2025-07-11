@@ -67,7 +67,7 @@ function formatTextToHtml(text) {
                 } else if (word.startsWith('[url=')) {
                     const startIndex = word.indexOf('=') + 1
                     const url = word.slice(startIndex, -1);
-                    html += `<a href=${url} target="_blank" rel="noopener noreferrer">`;
+                    html += `<a style="text-decoration: none;" href=${url} target="_blank" rel="noopener noreferrer">`;
                 } else if (word === '[/url]') {
                     html += '</a>';
                 } else if (word.startsWith('[dynamiclink href=')) {
@@ -122,6 +122,7 @@ function formatTextToHtml(text) {
         if ((/\[\w+\]|\[\/\w+\]/g).test(line) === false) {
             html += '<br />';
         }
+        console.log(html, text);
     }
     return html;
 };

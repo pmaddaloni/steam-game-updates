@@ -61,8 +61,8 @@ export default function Header() {
         if (target) {
             target.blur();
         }
-        const searchBar = document.getElementById("game-list");
-        searchBar?.scrollTo({
+        const gameList = document.getElementById("game-list");
+        gameList?.scrollTo({
             top: -100,
             behavior: 'instant',
         });

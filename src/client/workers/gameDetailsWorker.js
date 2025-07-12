@@ -7,6 +7,17 @@ axios.defaults.baseURL = self.location.host.includes('steamgameupdates.info') ?
 // https://create-react-app.dev/docs/adding-custom-environment-variables/#adding-development-environment-variables-in-env
 
 axios.defaults.withCredentials = true;
+axios.defaults.maxRedirects = 0; // Set to 0 to prevent automatic redirects
+axios.interceptors.response.use(
+    response => response,
+    error => {
+        if (error.response && [301, 302].includes(error.response.status)) {
+            const redirectUrl = error.response.headers.location;
+            return axios[error.config.method](redirectUrl);
+        }
+        return Promise.reject(error);
+    }
+);
 
 async function getMostRecentUpdates(ownedGames) {
     const gameIDs = Object.keys(ownedGames);

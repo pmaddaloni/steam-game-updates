@@ -122,7 +122,6 @@ function formatTextToHtml(text) {
         if ((/\[\w+\]|\[\/\w+\]/g).test(line) === false) {
             html += '<br />';
         }
-        console.log(html, text);
     }
     return html;
 };

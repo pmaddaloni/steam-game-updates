@@ -4,7 +4,7 @@ import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
 const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
-    'https://api.steamgameupdates.info/websocket' : process.env.REACT_APP_WEBSOCKET || 'localhost:8081';
+    'https://steamgameupdates.info/websocket' : process.env.REACT_APP_WEBSOCKET || 'localhost:8081';
 
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
@@ -141,7 +141,7 @@ export const AuthProvider = function ({ children }) {
     }, [dispatch]);
 
     const getAllUserOwnedGames = useCallback(async (userID = state.id) => {
-        const result = await axios.get('api/owned-games', { params: { id: userID, use_local: true } });
+        const result = await axios.get('api/owned-games', { params: { id: userID, /* use_local: true  */ } });
         if (result != null) {
             const ownedGames = result?.data?.games?.reduce((acc, game) => {
                 return {

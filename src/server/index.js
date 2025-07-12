@@ -529,7 +529,8 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(cors({
-    origin: true,
+    origin: config.HOST_ORIGIN ?
+        config.HOST_ORIGIN + (config.HOST_ORIGIN_PORT || ':3000') : 'https://steamgameupdates.info',
     methods: ['GET', 'POST'],
     credentials: true,          // Allow cookies to be sent with requests
     optionsSuccessStatus: 200   // some legacy browsers (IE11, various SmartTVs) choke on 204

@@ -46,8 +46,8 @@ passport.deserializeUser(function (obj, done) {
 //   credentials (in this case, an OpenID identifier and profile), and invoke a
 //   callback with a user object.
 passport.use(new SteamStrategy({
-    returnURL: (config.HOST_ORIGIN || 'http://localhost') + ':8080/auth/steam/return',
-    realm: (config.HOST_ORIGIN || 'http://localhost') + ':8080/',
+    returnURL: (config.HOST_ORIGIN || 'http://localhost:8080') + '/api/auth/steam/return',
+    realm: config.HOST_ORIGIN || 'http://localhost:8080/',
     apiKey: config.STEAM_API_KEY,
     passReqToCallback: true,
 },
@@ -767,7 +767,7 @@ app.get('/auth/steam', (req, res, next) => {
 //   request.  If authentication fails, the user will be redirected back to the
 //   login page.  Otherwise, the primary route function function will be called,
 //   which, in this example, will redirect the user to the home page.
-app.get('/auth/steam/return',
+app.get('/api/auth/steam/return',
     // authenticateMiddleware,
     passport.authenticate('steam', { failureRedirect: '/error' }),
     function (req, res) {

@@ -54,7 +54,6 @@ const reducer = (state, { type, value }) => {
 };
 
 let gameDetailsWorker = null;
-let gameUpdatesWorker = null;
 let steamGameUpdatesSocket = null;
 
 export const AuthProvider = function ({ children }) {
@@ -64,7 +63,6 @@ export const AuthProvider = function ({ children }) {
     useEffect(() => {
         if (window.Worker) {
             gameDetailsWorker = new Worker(new URL("./workers/gameDetailsWorker.js", import.meta.url));
-            gameUpdatesWorker = new Worker(new URL("./workers/gameUpdatesWorker.js", import.meta.url));
 
             // Set up event listeners for messages from the worker
             gameDetailsWorker.onmessage = function (event) {
@@ -75,12 +73,23 @@ export const AuthProvider = function ({ children }) {
             // Clean up the worker when the component unmounts
             return () => {
                 gameDetailsWorker.terminate();
-                gameUpdatesWorker.terminate();
             };
         } else {
             console.log("This browser doesn't support web workers.");
         }
     }, []);
+
+    function queueMostRecentUpdatesForGame({ appid, name }) {
+        if (appid == null) {
+            return null;
+        }
+        try {
+            axios.post('/api/game-updates', { params: { appid } });
+        } catch (err) {
+            console.error(`Requesting info about ${appid} (${name}) updates failed.`, err);
+            return err;
+        }
+    }
 
     // Web socket setup
     useEffect(() => {
@@ -98,7 +107,7 @@ export const AuthProvider = function ({ children }) {
                     const appids = Object.keys(apps);
                     for (const appid of appids) {
                         if (state.ownedGames[appid] != null) {
-                            gameUpdatesWorker.postMessage({ appid, name: state.ownedGames[appid].name });
+                            queueMostRecentUpdatesForGame({ appid, name: state.ownedGames[appid].name });
                         }
                     }
                 } else if (appid != null && state.ownedGames[appid] != null && eventsLength > 0) {

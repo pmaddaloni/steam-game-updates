@@ -41,46 +41,41 @@ passport.deserializeUser(function (obj, done) {
     done(null, obj);
 });
 
+process.title = 'SteamGameUpdates-Server';
+
 // Use the SteamStrategy within Passport.
 //   Strategies in passport require a `validate` function, which accept
 //   credentials (in this case, an OpenID identifier and profile), and invoke a
 //   callback with a user object.
 passport.use(new SteamStrategy({
-    returnURL: (config.HOST_ORIGIN || 'http://localhost:8080') + '/api/auth/steam/return',
+    returnURL: (config.HOST_ORIGIN || 'http://localhost') + `${environment === 'dev' ? ':8080' : ''}/api/auth/steam/return`,
     realm: config.HOST_ORIGIN || 'http://localhost:8080/',
     apiKey: config.STEAM_API_KEY,
     passReqToCallback: true,
-},
-    /* (user, done) => {
-        console.log('Steam user authenticated:', user);
-        done(null, user);
-    } */
+}, function (req, identifier, user, done) {
+    console.log('\n\nUser logged in:', identifier)
+    // check for 'JSON response invalid, your API key is most likely wrong'
+    process.nextTick(function () {
+        user.identifier = identifier;
+        if (req.session.oauthRedirectUri) {
+            user.redirect_uri = req.session.oauthRedirectUri;
+        }
+        if (req.session.state) {
+            user.state = req.session.state;
+        }
+        return done(null, user);
+    });
+}));
 
-    function (req, identifier, user, done) {
-        console.log('\n\nPassport Validator:', req.session, identifier, user)
-        // check for 'JSON response invalid, your API key is most likely wrong'
-        process.nextTick(function () {
-            user.identifier = identifier;
-            if (req.session.oauthRedirectUri) {
-                user.redirect_uri = req.session.oauthRedirectUri;
-            }
-            if (req.session.state) {
-                user.state = req.session.state;
-            }
-            return done(null, user);
-        });
-    }
-));
-
-const DAILY_LIMIT = 100000;   // should be 100k, but for testing purposes it's lower for now
-const WAIT_TIME = 1000;     // Space out requests to at most 1 request per second
+const DAILY_LIMIT = 100000;
+const WAIT_TIME = 1000;                     // Space out requests to at most 1 request per second
 const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per WAIT_TIME
 
 // Check if storage folders exist, and create if not.
 const passportSessionsDirectoryPath = path.join(__dirname, './storage/passport-sessions');
 if (!fs.existsSync(passportSessionsDirectoryPath)) {
     try {
-        fs.mkdirSync(passportSessionsDirectoryPath, { recursive: true });
+        fs.mkdirSync(passportSessionsDirectoryPath, { recursive: true });   // create parent dir if need be.
         console.log(`Directory '${passportSessionsDirectoryPath}' created successfully.`);
     } catch (err) {
         console.error('Error creating directory. Must abort application and fix - check permissions.', err);
@@ -143,7 +138,6 @@ function makeRequest(url, method = 'get') {
     }
 };
 
-// TODO: Possibly move this to a child process.
 // https://stackoverflow.com/questions/33030092/webworkers-with-a-node-js-express-application
 async function getAllSteamGameNames() {
     return app.locals.requestQueue.add(
@@ -294,7 +288,6 @@ ws.on('error', (error) => {
     console.error('SteamWebPipes error:', error);
 });
 // END SteamWebPipes WebSocket connection
-
 
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
@@ -725,7 +718,6 @@ app.post('/api/logout/ios', function (req, res) {
 //   the user to steamcommunity.com.  After authenticating, Steam will redirect the
 //   user back to this application at /auth/steam/return
 app.get('/auth/steam', (req, res, next) => {
-    console.log('\n\n/auth/steam', req.query);
     const { redirect_uri, state } = req.query
     if (redirect_uri) {
         req.session.oauthRedirectUri = redirect_uri;
@@ -734,31 +726,7 @@ app.get('/auth/steam', (req, res, next) => {
     }
     const authenticator = passport.authenticate('steam', { state, failureRedirect: '/error', });
     authenticator(req, res, next)
-    // passport.authenticate('steam', { authInfo: true, failureRedirect: '/error', }));
 });
-// app.get('/auth/steam', function (req, next) {
-//     console.log('worked?', req.query, req.params)
-//     return passport.authenticate('steam', { failureRedirect: '/error', })(req, next);
-// });
-
-/* function authenticateMiddleware(req, res, next) {
-    console.log('\n\nauthenticateMiddleware:', req.session, req.authInfo, req.state, req.query);
-    passport.authenticate('steam', { authInfo: true, failureRedirect: '/error' }, (err, user, info) => {
-        console.log('\n\nauthenticateMiddleware authenticated:', user, info, req.authInfo, req.state, req.session);
-        if (err) {
-            console.error('Error authenticating user:', err);
-            // Handle errors like exceptions thrown in strategy
-            return res.status(500).json({ error: err?.message || err });
-        }
-        if (!user) {
-            // Handle authentication failure
-            return res.status(401).json({ error: info.message || 'Authentication failed' });
-        }
-        // If there's a user, attach to request and continue
-        req.user = user;
-        next();
-    })(req, res, next);
-} */
 
 // GET /auth/steam/return
 //   Use passport.authenticate() as route middleware to authenticate the
@@ -766,13 +734,10 @@ app.get('/auth/steam', (req, res, next) => {
 //   login page.  Otherwise, the primary route function function will be called,
 //   which, in this example, will redirect the user to the home page.
 app.get('/api/auth/steam/return',
-    // authenticateMiddleware,
     passport.authenticate('steam', { failureRedirect: '/error' }),
     function (req, res) {
         const redirect_uri = req.user?.redirect_uri;
         const state = req.user?.state;
-        console.log('\n\n/auth/steam/return:', req.user, req.session, !!redirect_uri && !!state);
-
         if (redirect_uri && state) {
             delete req.user.redirect_uri;
             delete req.user.state;

@@ -33,7 +33,7 @@
     "predeploy": "npm run build",
     "add-domain": "echo \"steamgameupdates.info\" > build/CNAME",
     "deploy": "npm run add-domain && gh-pages -d build",
-    "start-express": "node --max-http-header-size 16000 ./src/server/index.js",
+    "start-express": "node --max_old_space_size=8192 --max-http-header-size=16000 ./src/server/index.js",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",

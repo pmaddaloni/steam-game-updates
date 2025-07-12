@@ -526,22 +526,20 @@ app.use(session({
     name: 'steam-game-updates',
     resave: false,
     saveUninitialized: true,
-    store: new FileStore({                          // Use FileStore as the session store
-        path: path.join(__dirname, './storage/passport-sessions'),   // Specify the directory to store session files
-        ttl: 60 * 60 * 24 * 2,                      // Set the time to live for sessions to 2 days
+    store: new FileStore({                                          // Use FileStore as the session store
+        path: path.join(__dirname, './storage/passport-sessions'),  // Specify the directory to store session files
+        ttl: 60 * 60 * 24 * 2,                                      // Set the time to live for sessions to 2 days
     })
 }));
 
-// Initialize Passport and use passport.session() middleware to support
-// persistent login sessions.
+// Initialize Passport and use passport.session() middleware to support persistent login sessions.
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(cors({
-    // origin: config.HOST_ORIGIN ?? 'http://192.168.110.89:3000', // Allow requests from dev
-    origin: (config.HOST_ORIGIN || 'http://localhost') + ':3000', // Allow requests from dev
+    origin: true,
     methods: ['GET', 'POST'],
-    credentials: true, // Allow cookies to be sent with requests
-    optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
+    credentials: true,          // Allow cookies to be sent with requests
+    optionsSuccessStatus: 200   // some legacy browsers (IE11, various SmartTVs) choke on 204
 }));
 
 app.set('views', path.join(__dirname, './views'));

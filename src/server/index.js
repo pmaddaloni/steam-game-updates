@@ -366,7 +366,10 @@ const getGameUpdates = async (externalGameID) => {
                 }
 
                 // To keep track of the most recent 10 updates - .slice(0, 10)
-                const mostRecentEvents = result.events.map(event => event.announcement_body);
+                const mostRecentEvents = result.events.map(event => {
+                    const { posttime, body, gid, headline } = event.announcement_body;
+                    return { posttime, body, gid, headline };
+                });
                 const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0) * 1000;
                 const mostRecentPreviouslyKnownEventTime = (app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0) * 1000;
                 // Since we just got the most recent updates, this can be set to that event's post time.

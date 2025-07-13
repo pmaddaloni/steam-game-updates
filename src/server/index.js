@@ -171,7 +171,7 @@ app.locals.allSteamGamesUpdatesPossiblyChanged = JSON.parse(allSteamGamesUpdates
 app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
 app.locals.gameIDsToCheckIndex = parseInt(gameIDsToCheckIndex, 10);
 app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
-app.locals.userOwnedGames = environment === 'dev' ? JSON.parse(userOwnedGames) : null;
+app.locals.userOwnedGames = environment === 'development' ? JSON.parse(userOwnedGames) : null;
 app.locals.waitBeforeRetrying = false;
 const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
 app.locals.dailyLimit = lastDailyLimitUsage - 200; // Playing it safe and always giving a buffer on startup of 200 less requests so as not to overwhelm the API
@@ -526,6 +526,11 @@ app.use(session({
     name: 'steam-game-updates',
     resave: false,
     saveUninitialized: true,
+    cookie: {
+        sameSite: 'none', // Required for cross-site requests
+        secure: true,      // Must be true when sameSite is 'none'
+        httpOnly: true,    // Recommended for security
+    },
     store: new FileStore({                                          // Use FileStore as the session store
         path: path.join(__dirname, './storage/passport-sessions'),  // Specify the directory to store session files
         ttl: 60 * 60 * 24 * 2,                                      // Set the time to live for sessions to 2 days
@@ -536,8 +541,8 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(cors({
-    origin: config.HOST_ORIGIN ?
-        config.HOST_ORIGIN + (config.HOST_ORIGIN_PORT || ':3000') : 'https://steamgameupdates.info',
+    origin: environment === 'development' ?
+        (config.HOST_ORIGIN || 'http://localhost') + (config.HOST_ORIGIN_PORT || ':3000') : 'https://steamgameupdates.info',
     methods: ['GET', 'POST'],
     credentials: true,          // Allow cookies to be sent with requests
     optionsSuccessStatus: 200   // some legacy browsers (IE11, various SmartTVs) choke on 204
@@ -769,8 +774,5 @@ if (environment === 'development') {
         cert: fs.readFileSync(config.SSL_CERT_PATH),
     };
 
-    createServer(options, (req, res) => {
-        res.writeHead(200);
-        console.log(`Prod secure server has started on port ${PORT}.`);
-    }).listen(PORT);
+    createServer(options, app).listen(PORT);
 }

@@ -161,12 +161,12 @@ export default function Body() {
                     <p>
                         {id === '' ?
                             <>
-                                Log in to see updates for your games!
+                                Log in to see all updates for your owned Steam games.
                                 <br />
-                                <small><b>**</b>Your profile must be public for this to work.<b>**</b></small>
+                                <small><b>**</b>Your Steam profile must be public for this to work.<b>**</b></small>
                             </>
                             :
-                            <>Gathering patch notes for your owned games - hang tight!</>
+                            <>Gathering patch notes for your owned games - hang tight...</>
                         }
                     </p>
                 </div> :

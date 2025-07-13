@@ -4,7 +4,7 @@ import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
 const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
-    'https://steamgameupdates.info/websocket' : process.env.REACT_APP_WEBSOCKET || 'localhost:8081';
+    'wss://https://steamgameupdates.info/websocket' : 'ws://' + (process.env.REACT_APP_WEBSOCKET || 'localhost:8081');
 
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
@@ -96,7 +96,7 @@ export const AuthProvider = function ({ children }) {
         if (state.id !== '') {
             if (steamGameUpdatesSocket == null) {
                 // UPDATE THIS FROM DEVVVV
-                steamGameUpdatesSocket = new webSocketConnectWithRetry(`ws://${WEB_SOCKET_PATH}`);
+                steamGameUpdatesSocket = new webSocketConnectWithRetry(WEB_SOCKET_PATH);
             }
             steamGameUpdatesSocket.onmessage = (event) => {
                 // One of two types of messages is being received here:

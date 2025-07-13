@@ -8,6 +8,7 @@ import PQueue from 'p-queue';
 import passport from 'passport';
 import SteamStrategy from 'passport-steam';
 // import SteamStrategy from 'modern-passport-steam';
+import { createServer } from 'https';
 import path from 'path';
 import sessionfilestore from 'session-file-store';
 import { fileURLToPath } from 'url';
@@ -17,7 +18,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 import config from '../../config.js';
 import { PriorityQueue, webSocketConnectWithRetry } from '../utilities/utils.js';
 
-const environment = config.ENVIRONMENT || 'prod'; // Default to 'development' if not set
+const environment = config.ENVIRONMENT || 'development'; // Default to 'development' if not set
 
 const __filename = fileURLToPath(import.meta.url);  // get the resolved path to the file
 const __dirname = path.dirname(__filename);         // get the name of the directory
@@ -48,7 +49,7 @@ process.title = 'SteamGameUpdates-Server';
 //   credentials (in this case, an OpenID identifier and profile), and invoke a
 //   callback with a user object.
 passport.use(new SteamStrategy({
-    returnURL: (config.HOST_ORIGIN || 'http://localhost') + `${environment === 'dev' ? ':8080' : ''}/api/auth/steam/return`,
+    returnURL: (config.HOST_ORIGIN || 'http://localhost') + `${environment === 'development' ? ':8080' : ''}/api/auth/steam/return`,
     realm: config.HOST_ORIGIN || 'http://localhost:8080/',
     apiKey: config.STEAM_API_KEY,
     passReqToCallback: true,
@@ -123,7 +124,7 @@ const serverRefreshTimeAndCount = fs.existsSync(path.join(__dirname, './storage/
 const mobileSessions = fs.existsSync(path.join(__dirname, './storage/mobileSessions.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/mobileSessions.json'), { encoding: 'utf8', flag: 'r' })
     : '[]';    // [ sessionID-1, sessionID-2, ... ]
-const userOwnedGames = environment === 'dev' &&
+const userOwnedGames = environment === 'development' &&
     fs.existsSync(path.join(__dirname, './storage/userOwnedGames.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/userOwnedGames.json'), { encoding: 'utf8', flag: 'r' })
     : '{}';
@@ -237,8 +238,14 @@ console.log(`Server last refreshed on ${new Date(app.locals.lastServerRefreshTim
 console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates).length} games with their updates.`);
 
 // START Steam Game Updates WebSocket connection
-const wss = new WebSocketServer({ port: 8081 });
-
+const webSocketServerOptions = { port: 8081 };
+if (environment !== 'development') {
+    webSocketConnectWithRetry.server = createServer({
+        key: fs.readFileSync(config.SSL_KEY_PATH),
+        cert: fs.readFileSync(config.SSL_CERT_PATH),
+    });
+}
+const wss = new WebSocketServer(webSocketServerOptions);
 wss.on('connection', function connection(ws) {
     console.log('WebSocket connection established with a client');
     ws.on('error', console.error);
@@ -495,7 +502,7 @@ setInterval(() => {
                         console.log('File `mobileSessions.json` written successfully');
                     }
                 });
-            if (environment === 'dev' && userOwnedGames) {
+            if (environment === 'development' && userOwnedGames) {
                 fs.writeFile(path.join(__dirname, './storage/userOwnedGames.json'),
                     JSON.stringify(app.locals.userOwnedGames), (err) => {
                         if (err) {
@@ -573,7 +580,7 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
         const useLocal = req.query.use_local === 'true';
         // If we just want to use what has been retrieved previously so as not to constantly hit
         // Steam's API:
-        if (useLocal && environment === 'dev') {
+        if (useLocal && environment === 'development') {
             console.log(`Using locally stored games for user ${userID}; sending ${app.locals.userOwnedGames[userID]?.length ?? 0} games`);
             return res.send({ games: app.locals.userOwnedGames[userID] });
         }
@@ -592,7 +599,7 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
             });
         app.locals.dailyLimit--;
         console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count ?? 'no'} games`);
-        if (environment === 'dev') {
+        if (environment === 'development') {
             app.locals.userOwnedGames[userID] = result.data?.response?.games ?? [];
         }
         res.send(result.data?.response);
@@ -752,6 +759,18 @@ app.get('/api/auth/steam/return',
     });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-    console.log(`server listening on port ${PORT}`);
-});
+if (environment === 'development') {
+    app.listen(PORT, () => {
+        console.log(`server listening on port ${PORT}`);
+    });
+} else {
+    const options = {
+        key: fs.readFileSync(config.SSL_KEY_PATH),
+        cert: fs.readFileSync(config.SSL_CERT_PATH),
+    };
+
+    createServer(options, (req, res) => {
+        res.writeHead(200);
+        console.log(`Prod secure server has started on port ${PORT}.`);
+    }).listen(PORT);
+}

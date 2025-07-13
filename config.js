@@ -7,6 +7,8 @@ const config = {
     STEAM_GAME_UPDATES_SECRET: process.env.STEAM_GAME_UPDATES_SECRET,
     HOST_ORIGIN: process.env.REACT_APP_LOCALHOST,
     ENVIRONMENT: process.env.NODE_ENV || 'development',
+    SSL_KEY_PATH: process.env.SSL_KEY_PATH || './ssl/key.pem',
+    SSL_CERT_PATH: process.env.SSL_CERT_PATH || './ssl/cert.pem',
 };
 
 export default config;

@@ -1,6 +1,0 @@
-./SteamWebPipes-master
-./build
-./node_modules
-./static
-.env*
-./.git

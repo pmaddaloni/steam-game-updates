@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../AuthContext';
 import styles from './body-styles.module.scss';
 import GameUpdateContentComponent from './GameUpdateContentComponent';
@@ -9,53 +9,81 @@ import logo from './steam-logo.svg';
 export default function Body() {
     const itemsPerPage = 25;
     const { id, gameUpdates, ownedGames, filteredList } = useAuth();
-    const [displayedItems, setDisplayedItems] = useState([]);
-    const [startIndex, setStartIndex] = useState(0);
+    const [currentIndex, setCurrentIndex] = useState(0);
     const [selectedGame, setSelectedGame] = useState(null);
-    const timeoutId = useRef(null)
-    const gameComponents = useMemo(() => {
-        const shownEvents = {};     // {[appid]: # of times it's in the list}
-        let index = 0;
-        return gameUpdates.map(([, appid]) => {
-            const { events, name } = (filteredList ?? ownedGames)[appid] ?? {};
-            if (events != null && events.length > 0) {
-                shownEvents[appid] = (shownEvents[appid] ?? -1) + 1
-                const update = events[shownEvents[appid]];
-                return update && (
-                    <GameUpdateListComponent
-                        eventIndex={shownEvents[appid]}
-                        key={appid + '-' + update?.posttime}
-                        appid={appid}
-                        name={name}
-                        update={update}
-                        setSelectedGame={setSelectedGame}
-                        selectedGame={selectedGame}
-                        index={index++}
-                    />
-                );
-            }
-            return null;
-        }).filter(Boolean).concat(
-            <div
-                key='filler-list-item'
-                className={styles['empty-game']}
-            />
-        );
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [gameUpdates, filteredList]);
+    const [filteredComponents, setFilteredComponents] = useState(null);
+    const [gameComponents, setGameComponents] = useState([]);
+    const currentGameComponentsRef = useRef([]);
+    const shownEventsRef = useRef({}); // {[appid]: # of times it's in the list}
+    const timeoutId = useRef(null);
+
+    const createGameComponents = useCallback((components, index = 0) => {
+        const shownEvents = shownEventsRef.current;
+        let componentIndex = currentGameComponentsRef.current.length;
+        const gamesArray = components.slice(index, index + itemsPerPage);
+        const result = currentGameComponentsRef.current.concat(gamesArray
+            .reduce((acc, [, appid]) => {
+                const { events, name } = ownedGames[appid] ?? {};
+                if (events != null && events.length > 0) {
+                    shownEvents[appid] = (shownEvents[appid] ?? -1) + 1
+                    const update = events[shownEvents[appid]];
+                    if (update != null) {
+                        acc.push(
+                            <GameUpdateListComponent
+                                eventIndex={shownEvents[appid]}
+                                key={appid + '-' + update?.posttime}
+                                appid={appid}
+                                name={name}
+                                update={update}
+                                setSelectedGame={setSelectedGame}
+                                index={componentIndex++}
+                            />
+                        )
+                    }
+                }
+                return acc;
+            }, []));
+        currentGameComponentsRef.current = result;
+        return result;
+    }, [ownedGames]);
 
     useEffect(() => {
+        currentGameComponentsRef.current = [];
         setSelectedGame(null);
-        setDisplayedItems([]);
-        setStartIndex(itemsPerPage);
-    }, [filteredList]);
+        setCurrentIndex(0);
+        if (filteredList != null) {
+            const filteredGameComponents = createGameComponents(filteredList);
+            setFilteredComponents(filteredGameComponents);
+        } else {
+            setFilteredComponents(null);
+        }
+    }, [createGameComponents, filteredList]);
 
     useEffect(() => {
-        setDisplayedItems([...gameComponents.slice(0, itemsPerPage)]);
-        setStartIndex(itemsPerPage);
-    }, [gameComponents]);
+        currentGameComponentsRef.current = [];
+        setSelectedGame(null);
+        setCurrentIndex(0);
+        const gameComponents = createGameComponents(gameUpdates);
+        setGameComponents(gameComponents);
+    }, [createGameComponents, gameUpdates]);
 
     useEffect(() => {
+        if (currentIndex === 0) {
+            return;
+        }
+
+        if (filteredComponents != null) {
+            const filteredGameComponents = createGameComponents(filteredList);
+            setFilteredComponents(filteredGameComponents, currentIndex);
+        } else {
+            const gameComponents = createGameComponents(gameUpdates, currentIndex);
+            setGameComponents(gameComponents);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [createGameComponents, currentIndex]);
+
+    useEffect(() => {
+        // handle the case where a user refreshes their updates.
         if (gameUpdates.length === 0) {
             setSelectedGame(null);
         }
@@ -89,7 +117,6 @@ export default function Body() {
 
     const handleKeyDown = useCallback((event) => {
         document.body.style.pointerEvents = 'none';
-
         // Use a ref for timeoutId to persist across renders
         if (timeoutId.current) {
             clearTimeout(timeoutId.current);
@@ -97,23 +124,24 @@ export default function Body() {
         }
         timeoutId.current = setTimeout(showCursor, 5000);
 
+        const currentGameComponents = filteredComponents ?? gameComponents;
         const selectedIndex = selectedGame?.index ?? -1;
         let newIndex = selectedIndex;
         if (event.key === 'ArrowUp') {
             newIndex = selectedIndex > 0 ? selectedIndex - 1 : 0;
         } else if (event.key === 'ArrowDown') {
-            newIndex = selectedIndex < displayedItems.length - 1 ? selectedIndex + 1 : selectedIndex;
+            newIndex = selectedIndex < currentGameComponents.length - 1 ? selectedIndex + 1 : selectedIndex;
         }
 
         if (newIndex !== selectedIndex) {
-            const newSelectedGame = displayedItems.find(item => item.props.index === newIndex);
+            const newSelectedGame = currentGameComponents.find(item => item.props.index === newIndex);
             if (newSelectedGame) {
                 const { props: { appid, eventIndex, index } } = newSelectedGame;
                 const update = ownedGames[appid].events[eventIndex];
                 setSelectedGame({ appid, update, index });
             }
         }
-    }, [displayedItems, ownedGames, selectedGame]);
+    }, [filteredComponents, gameComponents, ownedGames, selectedGame?.index]);
 
     useEffect(() => {
         document.addEventListener('mousemove', () => {
@@ -127,16 +155,15 @@ export default function Body() {
             document.removeEventListener('mousemove', showCursor);
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [displayedItems, handleKeyDown, ownedGames, selectedGame]);
+    }, [handleKeyDown]);
 
     const handleScroll = () => {
+        const currentGameComponents = filteredComponents ?? gameComponents;
         const gameList = document.getElementById('game-list');
         const isAtBottom = gameList.scrollTop + gameList.clientHeight >= gameList.scrollHeight - 200;
-        if (isAtBottom /* && !isLoading */) {
-            const nextIndex = startIndex + itemsPerPage;
-            const nextItems = [...gameComponents.slice(startIndex, nextIndex)];
-            setStartIndex(nextIndex);
-            setDisplayedItems([...displayedItems, ...nextItems]);
+        if (isAtBottom) {
+            const nextIndex = currentGameComponents.length - 1 + itemsPerPage;
+            setCurrentIndex(nextIndex);
         }
     };
 
@@ -151,11 +178,13 @@ export default function Body() {
             gameList.removeEventListener('scroll', handleScroll);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [displayedItems]);
+    }, [gameComponents, filteredComponents]);
+
+    const gameComponentsToRender = filteredComponents ?? gameComponents;
 
     return (
         <div className={styles["app-body"]} >
-            {Object.keys(gameUpdates).length === 0 ?
+            {Object.keys(gameUpdates).length === 0 || gameComponentsToRender.length === 0 ?
                 <div className={styles['loading-container']}>
                     <img src={logo} className="App-logo" alt="logo" />
                     <p>
@@ -166,7 +195,14 @@ export default function Body() {
                                 <small><b>**</b>Your Steam profile must be public for this to work.<b>**</b></small>
                             </>
                             :
-                            <>Gathering patch notes for your owned games - hang tight...</>
+                            gameComponentsToRender.length === 0 ?
+                                <>
+                                    It seems like you don't own any Steam games...
+                                    <br />
+                                    <small><b>**</b>If this isn't the case try logging out and then back in.<b>**</b></small>
+                                </>
+                                :
+                                <>Gathering patch notes for your owned games - hang tight...</>
                         }
                     </p>
                 </div> :
@@ -178,7 +214,12 @@ export default function Body() {
                                 <div className={styles['patch-title-header']}>Game</div>
                                 <div className={styles['patch-title-header']}>Title</div>
                             </div>
-                            {displayedItems}
+                            {(filteredComponents ?? gameComponents).concat(
+                                <div
+                                    key='filler-list-item'
+                                    className={styles['empty-game']}
+                                />
+                            )}
                         </div>
                         <div className={styles['update-container']}>
                             <div className={styles["container-header"]}>
@@ -188,6 +229,7 @@ export default function Body() {
                                 id='update-content'
                                 data-gid={selectedGame?.update?.gid ?? ''}
                                 className={styles['update-content']}
+                                style={selectedGame === null ? { opacity: 1 } : {}}
                             >{
                                     selectedGame != null ?
                                         <GameUpdateContentComponent
@@ -196,7 +238,7 @@ export default function Body() {
                                             name={ownedGames[selectedGame.appid].name}
                                         />
                                         :
-                                        'Click or use the keyboard to see a game\'s update details!'
+                                        <div>Click or use the keyboard to see a game's update details.</div>
                                 }
                             </div>
                         </div>

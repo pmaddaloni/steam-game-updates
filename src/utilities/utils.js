@@ -22,6 +22,7 @@ export function webSocketConnectWithRetry(url, retryInterval = 3000, socketType 
         };
 
         ws.onerror = (error) => {
+            window?.alert("There was an error on the server. Please try refreshing the page.");
             console.error("Error establishing connection with server - try refreshing.", error);
         };
     }

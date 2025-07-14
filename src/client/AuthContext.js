@@ -39,15 +39,16 @@ const reducer = (state, { type, value }) => {
             return { ...state, gameUpdates: newGameUpdates };
         case 'updateSearch':
             const searchTerm = value.toLowerCase().trim();
-            const filteredList = searchTerm === '' ? null :
+            const matchedGames = searchTerm === '' ? null :
                 Object.entries(state.ownedGames).reduce((acc, [key, value]) => {
-                    const result = { ...acc };
-                    const { name } = value
-                    if (name.toLowerCase().includes(searchTerm)) {
-                        result[key] = value
+                    const { name, events } = value
+                    if (name.toLowerCase().includes(searchTerm) && events?.length > 0) {
+                        const orderedEvents = events.map(({ posttime }) => [posttime, key]);
+                        acc = acc.concat(orderedEvents);
                     }
-                    return result;
-                }, {});
+                    return acc;
+                }, []);
+            const filteredList = matchedGames?.sort((a, b) => b[0] - a[0]);
             return { ...state, filteredList }
         default: return state;
     };

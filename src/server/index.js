@@ -54,8 +54,8 @@ passport.use(new SteamStrategy({
     apiKey: config.STEAM_API_KEY,
     passReqToCallback: true,
 }, function (req, identifier, user, done) {
-    console.log('\n\nUser logged in:', identifier)
     // check for 'JSON response invalid, your API key is most likely wrong'
+    console.log('\n\nUser logged in:', user, '\n', req.session)
     process.nextTick(function () {
         user.identifier = identifier;
         if (req.session.oauthRedirectUri) {
@@ -69,7 +69,7 @@ passport.use(new SteamStrategy({
 }));
 
 const DAILY_LIMIT = 100000;
-const WAIT_TIME = 1000;                     // Space out requests to at most 1 request per second
+const WAIT_TIME = 500;                     // Space out requests to at most 1 request per second
 const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per WAIT_TIME
 
 // Check if storage folders exist, and create if not.
@@ -426,7 +426,7 @@ const getGameUpdates = async (externalGameID) => {
 // Constraint of 100000k allows for an average of one request every 0.86 seconds over 24 hours.
 // Constraint of 200 per 5 minutes restricts to no more than one request every 1.5 seconds within any 5 - minute window.
 // 200 constraint doesn't appear to affect this request...
-setInterval(getGameUpdates, 1000);
+setInterval(getGameUpdates, WAIT_TIME);
 
 // Save the results every minute so we don't lose them if the server restarts/crashes.
 // Write to file for now, but future optimization could be to use something like mongo db.
@@ -524,21 +524,25 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 const FileStore = sessionfilestore(session);
-app.use(session({
+const sessionOptions = {
     secret: config.STEAM_GAME_UPDATES_SECRET,
     name: 'steam-game-updates',
     resave: false,
     saveUninitialized: true,
-    cookie: {
-        sameSite: 'none', // Required for cross-site requests
-        secure: true,      // Must be true when sameSite is 'none'
-        httpOnly: true,    // Recommended for security
-    },
     store: new FileStore({                                          // Use FileStore as the session store
         path: path.join(__dirname, './storage/passport-sessions'),  // Specify the directory to store session files
         ttl: 60 * 60 * 24 * 2,                                      // Set the time to live for sessions to 2 days
     })
-}));
+};
+if (environment !== 'development') {
+    sessionOptions.cookie = {
+        sameSite: 'none',  // Required for cross-site requests
+        secure: true,      // Must be true when sameSite is 'none'
+        httpOnly: true,    // Recommended for security
+    };
+}
+app.use(session(sessionOptions));
+// app.set('trust proxy', 1);
 
 // Initialize Passport and use passport.session() middleware to support persistent login sessions.
 app.use(passport.initialize());
@@ -738,7 +742,7 @@ app.get('/auth/steam', (req, res, next) => {
     if (redirect_uri) {
         req.session.oauthRedirectUri = redirect_uri;
         req.session.state = state;
-        console.log('/auth/steam queries found:', req.session);
+        // req.session.save();
     }
     const authenticator = passport.authenticate('steam', { state, failureRedirect: '/error', });
     authenticator(req, res, next)

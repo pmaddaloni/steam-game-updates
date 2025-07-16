@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { spawn } from 'child_process';
+import { fork, spawn } from 'child_process';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
@@ -10,6 +10,7 @@ import SteamStrategy from 'passport-steam';
 // import SteamStrategy from 'modern-passport-steam';
 import { createServer } from 'https';
 import path from 'path';
+import pidusage from 'pidusage';
 import sessionfilestore from 'session-file-store';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
@@ -24,8 +25,117 @@ const __filename = fileURLToPath(import.meta.url);  // get the resolved path to 
 const __dirname = path.dirname(__filename);         // get the name of the directory
 
 console.clear();
+
 // Spin up SteamWebPipes server
-spawn(path.join(__dirname, '../../SteamWebPipes-master/bin/SteamWebPipes'));
+const MEMORY_LIMIT_MB = 100;
+const MEMORY_LIMIT_BYTES = MEMORY_LIMIT_MB * 1024 * 1024;
+const MONITOR_INTERVAL_MS = 15000; // Check every 15 seconds
+
+let steamWepPipesProcess = null
+let ws = null;
+function initializeSteamWebPipes() {
+    steamWepPipesProcess = spawn(path.join(__dirname, '../../SteamWebPipes-master/bin/SteamWebPipes'));
+    // SteamWebPipes WebSocket setup
+    do {
+        console.log('Connecting to SteamWebPipes server...');
+        ws = webSocketConnectWithRetry({
+            url: 'ws://localhost:8181',
+            socketType: 'server',
+            isDev: environment === 'development'
+        });
+    } while (ws == null);
+
+    ws.on('open', () => {
+        console.log('Connected to SteamWebPipes server');
+    });
+
+    // START SteamWebPipes WebSocket connection
+    // Keep track of what has POSSIBLY changed from PICS
+    ws.on('message', (message) => {
+        const { Apps: apps } = JSON.parse(message);
+        if (apps == null) {
+            return;
+        }
+        // broadcast the PICS update message to all connected clients
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                    apps
+                }));
+            }
+        });
+        const appids = Object.keys(apps);
+        for (const appid of appids) {
+            app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime();
+        }
+    });
+
+    ws.on('close', () => {
+        console.log('Disconnected from SteamWebPipes server');
+    });
+
+    ws.on('error', (error) => {
+        console.error('SteamWebPipes error:', error);
+    });
+    // END SteamWebPipes WebSocket connection
+}
+initializeSteamWebPipes();
+
+setInterval(() => {
+
+    if (steamWepPipesProcess?.exitCode == null && steamWepPipesProcess.signalCode == null) {
+        pidusage(steamWepPipesProcess.pid)
+            .then(stats => {
+                // stats.memory is in bytes (RSS - Resident Set Size)
+                const memoryMB = stats.memory / (1024 * 1024);
+                console.log(`Child process (PID: ${steamWepPipesProcess.pid}) memory usage: ${memoryMB.toFixed(2)} MB`);
+
+                if (stats.memory > MEMORY_LIMIT_BYTES) {
+                    console.warn(`Child process (PID: ${steamWepPipesProcess.pid}) exceeded memory limit (${MEMORY_LIMIT_MB} MB). Killing it.`);
+                    steamWepPipesProcess.kill('SIGKILL'); // Use SIGKILL for immediate termination
+                    initializeSteamWebPipes()
+                }
+            })
+            .catch(err => {
+                console.error('Error getting child process memory usage:', err);
+            });
+    } else {
+        // If the child process is no longer active for some reason, restart it
+        console.warn('Child process is not running. Restarting SteamWebPipes server...');
+        initializeSteamWebPipes()
+    }
+}, MONITOR_INTERVAL_MS);
+
+let fileWriterProcess;
+const childProcessPath = path.resolve(path.join(__dirname, './fileWriter.js'));
+const initializeChildProcess = () => {
+    fileWriterProcess = fork(childProcessPath);
+
+    fileWriterProcess.on('message', (message) => {
+        if (message.type === 'success') {
+            console.log(`FileWriter: File "${message.filename}" written successfully.`);
+        } else if (message.type === 'error') {
+            console.error(`FileWriter: Error writing "${message.filename}":`, message.error);
+        } else {
+            console.log(`FileWriter: ${message.type}:\n${message.message}`);
+        }
+    });
+
+    fileWriterProcess.on('exit', (code, signal) => {
+        console.warn(`FileWriter process exited with code ${code} and signal ${signal}. Restarting...`);
+        // If the child process exits unexpectedly, restart it
+        fileWriterProcess = null;
+        setTimeout(initializeChildProcess, 1000);
+    });
+
+    fileWriterProcess.on('error', (err) => {
+        console.error('FileWriter process encountered an error:', err);
+    });
+
+    console.log('FileWriter child process initialized.');
+};
+
+initializeChildProcess(); // Initialize the child process on server start
 
 // Passport session setup.
 //   To support persistent login sessions, Passport needs to be able to
@@ -255,47 +365,6 @@ wss.on('connection', function connection(ws) {
 });
 // END Steam Game Updates WebSocket connection
 
-// SteamWebPipes WebSocket setup
-let ws = null;
-do {
-    console.log('Connecting to SteamWebPipes server...');
-    ws = webSocketConnectWithRetry('ws://localhost:8181', 3000, 'server');
-} while (ws == null);
-
-ws.on('open', () => {
-    console.log('Connected to SteamWebPipes server');
-});
-
-// START SteamWebPipes WebSocket connection
-// Keep track of what has POSSIBLY changed from PICS
-ws.on('message', (message) => {
-    const { Apps: apps } = JSON.parse(message);
-    if (apps == null) {
-        return;
-    }
-    // broadcast the PICS update message to all connected clients
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-                apps
-            }));
-        }
-    });
-    const appids = Object.keys(apps);
-    for (const appid of appids) {
-        app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime();
-    }
-});
-
-ws.on('close', () => {
-    console.log('Disconnected from SteamWebPipes server');
-});
-
-ws.on('error', (error) => {
-    console.error('SteamWebPipes error:', error);
-});
-// END SteamWebPipes WebSocket connection
-
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
 // Initial Daily Limit Interval must respect previous start time, so start with Timeout
@@ -319,7 +388,7 @@ setInterval(() => {
     fs.readdirSync(dir).forEach(f => fs.rmSync(`${dir}/${f}`));
 }, (1000 * 60 * 60 * 24) * 22);    // Set a new interval of 24 hours
 
-// Refresh all games every fifteen minutes
+// Refresh all games every hour
 // At this point it's not cleared/guaranteed that the games will always come back in the
 // same order, but it appears to be the case, at least for now.
 setInterval(async () => {
@@ -336,7 +405,7 @@ setInterval(async () => {
             }
         });
     }
-}, 15 * 60 * 1000)
+}, 60 * 60 * 1000)
 
 const getGameUpdates = async (externalGameID) => {
     if (app.locals.dailyLimit > 0
@@ -348,8 +417,14 @@ const getGameUpdates = async (externalGameID) => {
         } else if (priorityGameID != null) {
             console.log('Priority gameID:', priorityGameID, app.locals.gameIDsToCheckPriorityQueue.size());
         }
-        const gameID = externalGameID ?? priorityGameID
+
+        let gameID = externalGameID ?? priorityGameID
             ?? app.locals.gameIDsToCheck[app.locals.gameIDsToCheckIndex];
+
+        if (gameID == null) {
+            app.locals.gameIDsToCheckIndex = 0; // Loop back to the beginning
+            gameID = app.locals.gameIDsToCheck[0];
+        }
 
         // Skip the gameID if it has already been checked and failed, and this wasn't a manual request.
         if (app.locals.gameIDsWithErrors.has(gameID) && !externalGameID && !priorityGameID) {
@@ -428,7 +503,8 @@ const getGameUpdates = async (externalGameID) => {
 // 200 constraint doesn't appear to affect this request...
 setInterval(getGameUpdates, WAIT_TIME);
 
-// Save the results every minute so we don't lose them if the server restarts/crashes.
+// FILE WRITE
+// Save the results every five minute so we don't lose them if the server restarts/crashes.
 // Write to file for now, but future optimization could be to use something like mongo db.
 setInterval(() => {
     // We may as well stop saving the files if the daily limit is 0 so we don't keep writing
@@ -438,82 +514,76 @@ setInterval(() => {
         if (app.locals.dailyLimit === -1) {
             app.locals.dailyLimit = -2;
         }
-        // TODO: Need to put this into a folder and have multiple files. TODO
+
         const entries = Object.entries(app.locals.allSteamGamesUpdates);
-        const chunkSize = 5000;
+        const chunkSize = 7500;
         try {
             for (let i = 0; i < entries.length; i += chunkSize) {
                 const nextChunk = i + chunkSize;
                 const subsetOfGames = entries.slice(i, nextChunk);
                 const chunk = Object.fromEntries(subsetOfGames)
-                const fileName = `allSteamGamesUpdates-${nextChunk}`;
-                fs.writeFile(path.join(__dirname, `./storage/all-steam-game-updates/${fileName}.json`),
-                    JSON.stringify(chunk), (err) => {
-                        if (err) {
-                            console.error(`Error writing to file ${fileName}.json`, err);
-                        } else {
-                            console.log(`File \`${fileName}.json\` written successfully`);
-                        }
-                    });
+                const filename = `allSteamGamesUpdates-${nextChunk}.json`;
+                fileWriterProcess.send({
+                    type: 'writeFile',
+                    payload: {
+                        filename,
+                        data: chunk,
+                        directory: path.join(__dirname, './storage/all-steam-game-updates')
+                    }
+                });
             }
+            fileWriterProcess.send({
+                type: 'writeFile',
+                payload: {
+                    filename: './storage/gameIDsWithErrors.json',
+                    data: Array.from(app.locals.gameIDsWithErrors),
+                }
+            });
 
-            fs.writeFile(path.join(__dirname, './storage/gameIDsWithErrors.json'),
-                JSON.stringify(Array.from(app.locals.gameIDsWithErrors)), (err) => {
-                    if (err) {
-                        console.error('Error writing to file gameIDsWithErrors.json', err);
-                    } else {
-                        console.log('File `gameIDsWithErrors.json` written successfully');
+            fileWriterProcess.send({
+                type: 'writeFile',
+                payload: {
+                    filename: './storage/gameIDsToCheckIndex.json',
+                    data: (app.locals.gameIDsToCheckIndex || 0).toString(),
+                }
+            });
+
+            fileWriterProcess.send({
+                type: 'writeFile',
+                payload: {
+                    filename: './storage/allSteamGamesUpdatesPossiblyChanged.json',
+                    data: app.locals.allSteamGamesUpdatesPossiblyChanged,
+                }
+            });
+            fileWriterProcess.send({
+                type: 'writeFile',
+                payload: {
+                    filename: './storage/serverRefreshTimeAndCount.json',
+                    data: [app.locals.lastServerRefreshTime, app.locals.dailyLimit],
+                }
+            });
+            fileWriterProcess.send({
+                type: 'writeFile',
+                payload: {
+                    filename: './storage/steamGameDetails.json',
+                    data: app.locals.steamGameDetails,
+                }
+            });
+            fileWriterProcess.send({
+                type: 'writeFile',
+                payload: {
+                    filename: './storage/mobileSessions.json',
+                    data: Array.from(app.locals.mobileSessions),
+                }
+            });
+            if (environment === 'development' && app.locals.userOwnedGames) {
+                fileWriterProcess.send({
+                    type: 'writeFile',
+                    payload: {
+                        filename: './storage/userOwnedGames.json',
+                        data: app.locals.userOwnedGames,
                     }
                 });
-            fs.writeFile(path.join(__dirname, './storage/gameIDsToCheckIndex.json'),
-                app.locals.gameIDsToCheckIndex.toString(), (err) => {
-                    if (err) {
-                        console.error('Error writing to file gameIDsToCheckIndex.json', err);
-                    } else {
-                        console.log('File `gameIDsToCheckIndex.json` written successfully');
-                    }
-                });
-            fs.writeFile(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json'),
-                JSON.stringify(app.locals.allSteamGamesUpdatesPossiblyChanged), (err) => {
-                    if (err) {
-                        console.error('Error writing to file allSteamGamesUpdatesPossiblyChanged.json', err);
-                    } else {
-                        console.log('File `allSteamGamesUpdatesPossiblyChanged.json` written successfully');
-                    }
-                });
-            fs.writeFile(path.join(__dirname, './storage/serverRefreshTimeAndCount.json'),
-                JSON.stringify([app.locals.lastServerRefreshTime, app.locals.dailyLimit]), (err) => {
-                    if (err) {
-                        console.error('Error writing to file serverRefreshTimeAndCount.json', err);
-                    } else {
-                        console.log('File `serverRefreshTimeAndCount.json` written successfully');
-                    }
-                });
-            fs.writeFile(path.join(__dirname, './storage/steamGameDetails.json'),
-                JSON.stringify(app.locals.steamGameDetails), (err) => {
-                    if (err) {
-                        console.error('Error writing to file steamGameDetails.json', err);
-                    } else {
-                        console.log('File `steamGameDetails.json` written successfully');
-                    }
-                });
-            fs.writeFile(path.join(__dirname, './storage/mobileSessions.json'),
-                JSON.stringify(Array.from(app.locals.mobileSessions)), (err) => {
-                    if (err) {
-                        console.error('Error writing to file mobileSessions.json', err);
-                    } else {
-                        console.log('File `mobileSessions.json` written successfully');
-                    }
-                });
-            if (environment === 'development' && userOwnedGames) {
-                fs.writeFile(path.join(__dirname, './storage/userOwnedGames.json'),
-                    JSON.stringify(app.locals.userOwnedGames), (err) => {
-                        if (err) {
-                            console.error('Error writing to file userOwnedGames.json', err);
-                        } else {
-                            console.log('File `userOwnedGames.json` written successfully');
-                        }
-                    });
             }
         } catch (err) {
             if (err) {
@@ -521,7 +591,7 @@ setInterval(() => {
             }
         }
     }
-}, 5 * 60 * 1000);
+}, 15 * 60 * 1000);
 
 const FileStore = sessionfilestore(session);
 const sessionOptions = {
@@ -543,7 +613,6 @@ if (environment !== 'development') {
 }
 app.use(session(sessionOptions));
 // app.set('trust proxy', 1);
-
 // Initialize Passport and use passport.session() middleware to support persistent login sessions.
 app.use(passport.initialize());
 app.use(passport.session());
@@ -555,6 +624,11 @@ app.use(cors({
     optionsSuccessStatus: 200   // some legacy browsers (IE11, various SmartTVs) choke on 204
 }));
 
+// Middleware to parse JSON and URL-encoded bodies
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Set up view engine
 app.set('views', path.join(__dirname, './views'));
 app.set('view engine', 'ejs');
 
@@ -569,16 +643,11 @@ app.get('/error', function (req, res) {
     res.render('error', { messages: req.sessions?.messages, user: req.user });
 });
 
-app.get('/api/user', (req, res) => {
-    if (req.isAuthenticated() ||
-        (req.headers['session-id'] != null && app.locals.mobileSessions.has(req.headers['session-id']))) {
-        if (req.user == null) {
-            res.sendStatus(200);
-        } else {
-            res.json(req.user);
-        }
+app.get('/api/user', ensureAuthenticated, (req, res) => {
+    if (req.user == null) {
+        res.sendStatus(200);
     } else {
-        res.status(401).json({ message: 'Not authenticated' });
+        res.json(req.user);
     }
 });
 
@@ -717,9 +786,13 @@ app.get('/api/login', function (req, res) {
     res.redirect('/auth/steam');
 });
 
-app.get('/api/logout', function (req, res) {
-    req.logout({}, () => { });
-    res.redirect('/close');
+app.post('/api/logout', function (req, res) {
+    if (req.isAuthenticated()) {
+        req.logout({}, () => { });
+    } else if (app.locals.mobileSessions.has(req.headers['session-id'])) {
+        app.locals.mobileSessions.delete(req.headers['session-id']);
+    }
+    res.sendStatus(200);
 });
 
 app.get('/api/login/ios', function (req, res) {

@@ -1,29 +1,49 @@
 import axios from 'axios';
 import ServerWebSocket from 'ws';
 
-const MAX_RETRIES = 10;
-export function webSocketConnectWithRetry(url, retryInterval = 3000, socketType = 'frontend') {
+const MAX_RETRIES = 1000;
+export function webSocketConnectWithRetry({ url, retryInterval = 3000, socketType = 'frontend', isDev = false }) {
     let ws;
     let retries = 0;
+    let errorShown = false
+    let interval = null;
 
     function attemptConnect() {
+        if (interval != null) {
+            retries++;
+        }
+        if (retries >= MAX_RETRIES) {
+            clearInterval(interval);
+            interval = null;
+            return;
+        }
+        isDev && console.log(`Attempting to connect to WebSocket at ${url} (attempt ${retries + 1})`);
         ws = socketType === 'frontend' ? new WebSocket(url) : new ServerWebSocket(url);
 
         ws.onopen = () => {
-            // console.log("WebSocket connected at " + url);
+            isDev && console.log("WebSocket connected at " + url);
+            clearInterval(interval);
+            retries = 0;
+            errorShown = false;
         };
 
         ws.onclose = (event) => {
-            // console.log(`WebSocket at ${ws.url} closed, reason: ${event.reason}, code: ${event.code}`);
-            if (event.code !== 1000 && retries < MAX_RETRIES) { // Don't retry if closed normally
-                retries++;
-                setTimeout(attemptConnect, retryInterval);
+            isDev && console.log(`WebSocket at ${ws.url} closed, reason: ${event.reason}, code: ${event.code}`);
+            if (event.code !== 1000 && interval == null) { // Don't retry if closed normally
+                interval = setInterval(attemptConnect, retryInterval);
             }
         };
 
         ws.onerror = (error) => {
-            window?.alert("There was an error on the server. Please try refreshing the page.");
             console.error("Error establishing connection with server - try refreshing.", error);
+            ws.close();
+            if (!errorShown && retries > 10 && window) {
+                errorShown = true;
+                window.alert("There was an error on the server. Please try refreshing the page.");
+            }
+            if (interval == null) {
+                interval = setInterval(attemptConnect, retryInterval);
+            }
         };
     }
     attemptConnect();

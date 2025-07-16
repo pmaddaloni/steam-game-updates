@@ -18,6 +18,7 @@ const defaultState = {
     ownedGames: {},     // { [appid]: {name, events} }
     gameUpdates: [],     // [ [updateTime, appid], ... ]
     filteredList: null,
+    loadingProgress: null,
 };
 
 const reducer = (state, { type, value }) => {
@@ -34,9 +35,7 @@ const reducer = (state, { type, value }) => {
             // localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(value));
             return { ...state, ownedGames: { ...value } };
         case 'updateGameUpdates':
-            let newGameUpdates = state.gameUpdates.concat(value);
-            newGameUpdates = newGameUpdates.sort((a, b) => b[0] - a[0]);
-            return { ...state, gameUpdates: newGameUpdates };
+            return { ...state, gameUpdates: value };
         case 'updateSearch':
             const searchTerm = value.toLowerCase().trim();
             const matchedGames = searchTerm === '' ? null :
@@ -50,6 +49,8 @@ const reducer = (state, { type, value }) => {
                 }, []);
             const filteredList = matchedGames?.sort((a, b) => b[0] - a[0]);
             return { ...state, filteredList }
+        case 'updateLoadingProgress':
+            return { ...state, loadingProgress: value };
         default: return state;
     };
 };
@@ -60,6 +61,37 @@ let steamGameUpdatesSocket = null;
 export const AuthProvider = function ({ children }) {
     const [state, dispatch] = useReducer(reducer, defaultState);
 
+    useEffect(() => {
+        // Populate the context with what's already been stored in local storage.
+        function checkLocalStorageIfLoggedIn() {
+            let user = localStorage.getItem('steam-game-updates-user');
+            if (user != null) {
+                user = JSON.parse(user);
+                dispatch({ type: 'login', value: user });
+            } else {
+                dispatch({ type: 'logout' })
+            }
+            return user;
+        };
+
+        (async () => {
+            try {
+                const isLoggedInLocally = checkLocalStorageIfLoggedIn();
+                if (isLoggedInLocally) {
+                    // checking if user has a valid session on the server
+                    const result = await axios.get('/api/user');
+                    if (result?.data) {
+                        localStorage.setItem('steam-game-updates-user', JSON.stringify(result.data));
+                        dispatch({ type: 'login', value: result.data });
+                    }
+                }
+            } catch (e) {
+                (async () => await localStorage.removeItem('steam-game-updates-user'))();
+                console.log('User session has expired - need to log in.');
+            }
+        })();
+    }, []);
+
     // Web worker setup
     useEffect(() => {
         if (window.Worker) {
@@ -67,9 +99,13 @@ export const AuthProvider = function ({ children }) {
 
             // Set up event listeners for messages from the worker
             gameDetailsWorker.onmessage = function (event) {
-                const { ownedGamesWithUpdates, gameUpdatesIDs } = event.data;
-                dispatch({ type: 'updateOwnedGames', value: ownedGamesWithUpdates });
-                dispatch({ type: 'updateGameUpdates', value: gameUpdatesIDs });
+                const { loadingProgress, ownedGamesWithUpdates, gameUpdatesIDs } = event.data;
+                if (loadingProgress != null) {
+                    dispatch({ type: 'updateLoadingProgress', value: loadingProgress });
+                } else {
+                    dispatch({ type: 'updateOwnedGames', value: ownedGamesWithUpdates });
+                    dispatch({ type: 'updateGameUpdates', value: gameUpdatesIDs });
+                }
             };
             // Clean up the worker when the component unmounts
             return () => {
@@ -97,7 +133,7 @@ export const AuthProvider = function ({ children }) {
         if (state.id !== '') {
             if (steamGameUpdatesSocket == null) {
                 // UPDATE THIS FROM DEVVVV
-                steamGameUpdatesSocket = new webSocketConnectWithRetry(WEB_SOCKET_PATH);
+                steamGameUpdatesSocket = new webSocketConnectWithRetry({ url: WEB_SOCKET_PATH, isDev: process.env.NODE_ENV === 'development' });
             }
             steamGameUpdatesSocket.onmessage = (event) => {
                 // One of two types of messages is being received here:
@@ -128,18 +164,7 @@ export const AuthProvider = function ({ children }) {
             }
         }
 
-    }, [state.id, state.ownedGames])
-
-    // Populate the context with what's already been stored in local storage.
-    const checkLocalStorage = useCallback(() => {
-        let user = localStorage.getItem('steam-game-updates-user');
-        if (user != null) {
-            user = JSON.parse(user);
-            dispatch({ type: 'login', value: user });
-        } else {
-            dispatch({ type: 'logout' })
-        }
-    }, [dispatch]);
+    }, [state.id, state.ownedGames]);
 
     const getAllUserOwnedGames = useCallback(async (userID = state.id) => {
         const result = await axios.get('api/owned-games', { params: { id: userID, /* use_local: true  */ } });
@@ -165,19 +190,6 @@ export const AuthProvider = function ({ children }) {
     }, [state.ownedGames]);
 
     useEffect(() => {
-        (async () => {
-            try {
-                // checking if user has a valid session on the server first
-                await axios.get('/api/user');
-                checkLocalStorage();
-            } catch (e) {
-                console.log('User session has expired - need to log in.');
-            }
-        })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    useEffect(() => {
         if (state.id && Object.keys(state.ownedGames).length === 0) {
             (async () => {
                 // First grab all of a user's owned games
@@ -195,12 +207,15 @@ export const AuthProvider = function ({ children }) {
         }
     }, [getAllUserOwnedGames, state.id, state.ownedGames]);
 
-    // REMOVE THIS WHEN DEPLOYING
-    window.state = state;
+    if (process.env.NODE_ENV === 'development') {
+        window.state = state;
+    }
 
-    return <AuthContext.Provider
-        value={{ ...state, fetchMoreUpdates, getAllUserOwnedGames, dispatch }}
-    >
-        {children}
-    </AuthContext.Provider>
+    return (
+        <AuthContext.Provider
+            value={{ ...state, fetchMoreUpdates, getAllUserOwnedGames, dispatch }}
+        >
+            {children}
+        </AuthContext.Provider>
+    );
 }

@@ -24,6 +24,7 @@
     "react-dom": "^19.0.0",
     "react-router": "^7.3.0",
     "react-scripts": "5.0.1",
+    "react-top-loading-bar": "^3.0.2",
     "sass": "^1.85.1",
     "session-file-store": "^1.5.0",
     "uuid": "^11.1.0",
@@ -62,6 +63,7 @@
     ]
   },
   "devDependencies": {
+    "@simbathesailor/use-what-changed": "^2.0.0",
     "eslint": "^8.57.1",
     "gh-pages": "^6.3.0",
     "wrangler": "^4.15.2"

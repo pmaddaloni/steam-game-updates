@@ -23,7 +23,7 @@ axios.interceptors.response.use(
 async function getMostRecentUpdates(ownedGames) {
     const gameIDs = Object.keys(ownedGames);
     const gameIDsToBeFetchedSize = 500; // Break up a person's library into chunks of 500 so as not to overwhelm the API
-
+    postMessage({ loadingProgress: 0 });
     try {
         let gameUpdatesIDs = [];
         do {
@@ -44,6 +44,7 @@ async function getMostRecentUpdates(ownedGames) {
                 gameUpdatesIDs = gameUpdatesIDs.concat(
                     events.map(({ posttime }) => [posttime, appid]));
             }
+            postMessage({ loadingProgress: (1 - (gameIDs.length / Object.keys(ownedGames).length)) * 100 });
         } while (gameIDs.length > 0)
         gameUpdatesIDs = gameUpdatesIDs.sort((a, b) => b[0] - a[0]);
         return { ownedGamesWithUpdates: ownedGames, gameUpdatesIDs };

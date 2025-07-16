@@ -8,7 +8,7 @@ import logo from './steam-logo.svg';
 
 export default function Body() {
     const itemsPerPage = 25;
-    const { id, gameUpdates, ownedGames, filteredList } = useAuth();
+    const { id, gameUpdates, ownedGames, filteredList, loadingProgress } = useAuth();
     const [currentIndex, setCurrentIndex] = useState(0);
     const [selectedGame, setSelectedGame] = useState(null);
     const [filteredComponents, setFilteredComponents] = useState(null);
@@ -195,7 +195,7 @@ export default function Body() {
                                 <small><b>**</b>Your Steam profile must be public for this to work.<b>**</b></small>
                             </>
                             :
-                            gameComponentsToRender.length === 0 ?
+                            loadingProgress === 100 && ownedGames.length === 0 ?
                                 <>
                                     It seems like you don't own any Steam games...
                                     <br />

@@ -476,7 +476,7 @@ const getGameUpdates = async (externalGameID) => {
                 // To keep track of the most recent 10 updates - .slice(0, 10)
                 const mostRecentEvents = result.events.map(event => {
                     const { posttime, body, gid, headline } = event.announcement_body;
-                    return { posttime, body, gid, headline };
+                    return { posttime, body, gid, headline, event_type: event.event_type };
                 });
                 const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0) * 1000;
                 const mostRecentPreviouslyKnownEventTime = (app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0) * 1000;
@@ -626,7 +626,7 @@ setInterval(async () => {
         }
         fileWriterProcess.kill();
     }
-}, 10 * 1000);
+}, 30 * 60 * 1000);
 
 const FileStore = sessionfilestore(session);
 const sessionOptions = {

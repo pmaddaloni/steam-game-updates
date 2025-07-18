@@ -105,7 +105,6 @@ export default function Header() {
                             type="text"
                             name="search"
                             maxLength="100"
-                            size="100"
                             onFocus={e => e.target.select()}
                             onChange={({ target }) => {
                                 if (target.value === '') {

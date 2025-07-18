@@ -88,10 +88,10 @@ setInterval(() => {
             .then(stats => {
                 // stats.memory is in bytes (RSS - Resident Set Size)
                 const memoryMB = stats.memory / (1024 * 1024);
-                console.log(`Child process (PID: ${steamWepPipesProcess.pid}) memory usage: ${memoryMB.toFixed(2)} MB`);
+                console.log(`SteamWebPipes process (PID: ${steamWepPipesProcess.pid}) memory usage: ${memoryMB.toFixed(2)} MB`);
 
                 if (stats.memory > MEMORY_LIMIT_BYTES) {
-                    console.warn(`Child process (PID: ${steamWepPipesProcess.pid}) exceeded memory limit (${MEMORY_LIMIT_MB} MB). Killing it.`);
+                    console.warn(`SteamWebPipes process (PID: ${steamWepPipesProcess.pid}) exceeded memory limit (${MEMORY_LIMIT_MB} MB). Killing it.`);
                     steamWepPipesProcess.kill('SIGKILL'); // Use SIGKILL for immediate termination
                     initializeSteamWebPipes()
                 }
@@ -106,26 +106,35 @@ setInterval(() => {
     }
 }, MONITOR_INTERVAL_MS);
 
-let fileWriterProcess;
+let fileWriterProcess = null;
 const childProcessPath = path.resolve(path.join(__dirname, './fileWriter.js'));
-const initializeChildProcess = () => {
+const initializeFileWriterProcess = () => {
     fileWriterProcess = fork(childProcessPath);
 
+    const pendingRequests = new Map();
+    let requestIdCounter = 0;
+
     fileWriterProcess.on('message', (message) => {
-        if (message.type === 'success') {
-            console.log(`FileWriter: File "${message.filename}" written successfully.`);
-        } else if (message.type === 'error') {
-            console.error(`FileWriter: Error writing "${message.filename}":`, message.error);
-        } else {
-            console.log(`FileWriter: ${message.type}:\n${message.message}`);
+        // Check if it's a response to a pending request
+        if (pendingRequests.has(message.requestID)) {
+            const { resolve, reject } = pendingRequests.get(message.requestID);
+            pendingRequests.delete(message.requestID);
+
+            if (message.type === 'success') {
+                console.log(`FileWriter: File "${message.filename}" written successfully.`);
+                resolve(message.data);
+            } else if (message.type === 'error') {
+                console.error(`FileWriter: Error writing "${message.filename}":`, message.error);
+                reject(new Error(message.error || 'Unknown error'));
+            }
         }
     });
 
     fileWriterProcess.on('exit', (code, signal) => {
-        console.warn(`FileWriter process exited with code ${code} and signal ${signal}. Restarting...`);
+        console.warn(`FileWriter process exited with code ${code} and signal ${signal}.`);
         // If the child process exits unexpectedly, restart it
         fileWriterProcess = null;
-        setTimeout(initializeChildProcess, 1000);
+        // setTimeout(initializeFileWriterProcess, 1000);
     });
 
     fileWriterProcess.on('error', (err) => {
@@ -133,9 +142,28 @@ const initializeChildProcess = () => {
     });
 
     console.log('FileWriter child process initialized.');
-};
 
-initializeChildProcess(); // Initialize the child process on server start
+    return function sendRequest({ type, payload }) {
+        return new Promise((resolve, reject) => {
+            const requestID = ++requestIdCounter;
+            pendingRequests.set(requestID, { resolve, reject });
+
+            fileWriterProcess.send({
+                type,
+                requestID,
+                payload
+            });
+
+            // // Optional: Add a timeout for requests to prevent hanging
+            // setTimeout(() => {
+            //     if (pendingRequests.has(requestId)) {
+            //         pendingRequests.delete(requestId);
+            //         reject(new Error(`Request ${requestId} timed out`));
+            //     }
+            // }, 15000); // 15 seconds timeout
+        });
+    }
+};
 
 // Passport session setup.
 //   To support persistent login sessions, Passport needs to be able to
@@ -209,11 +237,15 @@ if (!fs.existsSync(allSteamGameUpdatesDirectoryPath)) {
 let gameUpdatesFromFile = {};   // {[appid]: events[]}
 fs.readdirSync(allSteamGameUpdatesDirectoryPath).forEach(fileName => {
     if (path.extname(fileName) === '.json') {
-        const result =
-            fs.readFileSync(path.join(__dirname, `./storage/all-steam-game-updates/${fileName}`),
-                { encoding: 'utf8', flag: 'r' }) || '{}';
-        const parsedResult = JSON.parse(result);
-        gameUpdatesFromFile = { ...gameUpdatesFromFile, ...parsedResult };
+        try {
+            const result =
+                fs.readFileSync(path.join(__dirname, `./storage/all-steam-game-updates/${fileName}`),
+                    { encoding: 'utf8', flag: 'r' }) || '{}';
+            const parsedResult = JSON.parse(result);
+            gameUpdatesFromFile = { ...gameUpdatesFromFile, ...parsedResult };
+        } catch (e) {
+            console.error(`failure reading file ${fileName}.json`);
+        }
     }
 });
 const allSteamGamesUpdatesPossiblyChangedFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json')) ?
@@ -291,13 +323,14 @@ app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
 app.locals.mobileSessions = new Set(JSON.parse(mobileSessions));
 
 const ensureAuthenticated = function (req, res, next) {
+    console.log(req.user, req.headers)
     if (req.isAuthenticated() || app.locals.mobileSessions.has(req.headers['session-id'])) {
         return next();
     }
     console.error('User is not authenticated:',
         req.user, req.headers['session-id'],
         app.locals.mobileSessions.has(req.headers['session-id']));
-    res.sendStatus(429);
+    res.sendStatus(401);
 }
 
 async function getGameIDUpdates(gameID, prioritizedRequest = false) {
@@ -506,15 +539,16 @@ setInterval(getGameUpdates, WAIT_TIME);
 // FILE WRITE
 // Save the results every five minute so we don't lose them if the server restarts/crashes.
 // Write to file for now, but future optimization could be to use something like mongo db.
-setInterval(() => {
+setInterval(async () => {
     // We may as well stop saving the files if the daily limit is 0 so we don't keep writing
     // the same data over and over again.
-    if (app.locals.dailyLimit > -2) {
+    if (app.locals.dailyLimit > -2 && fileWriterProcess == null) {
         // Save once after the daily limit is reached, then stop.
         if (app.locals.dailyLimit === -1) {
             app.locals.dailyLimit = -2;
         }
 
+        const fileWriterSend = initializeFileWriterProcess(); // Initialize the child process on server start
         const entries = Object.entries(app.locals.allSteamGamesUpdates);
         const chunkSize = 7500;
         try {
@@ -523,7 +557,7 @@ setInterval(() => {
                 const subsetOfGames = entries.slice(i, nextChunk);
                 const chunk = Object.fromEntries(subsetOfGames)
                 const filename = `allSteamGamesUpdates-${nextChunk}.json`;
-                fileWriterProcess.send({
+                await fileWriterSend({
                     type: 'writeFile',
                     payload: {
                         filename,
@@ -532,7 +566,7 @@ setInterval(() => {
                     }
                 });
             }
-            fileWriterProcess.send({
+            await fileWriterSend({
                 type: 'writeFile',
                 payload: {
                     filename: './storage/gameIDsWithErrors.json',
@@ -540,7 +574,7 @@ setInterval(() => {
                 }
             });
 
-            fileWriterProcess.send({
+            await fileWriterSend({
                 type: 'writeFile',
                 payload: {
                     filename: './storage/gameIDsToCheckIndex.json',
@@ -548,28 +582,28 @@ setInterval(() => {
                 }
             });
 
-            fileWriterProcess.send({
+            await fileWriterSend({
                 type: 'writeFile',
                 payload: {
                     filename: './storage/allSteamGamesUpdatesPossiblyChanged.json',
                     data: app.locals.allSteamGamesUpdatesPossiblyChanged,
                 }
             });
-            fileWriterProcess.send({
+            await fileWriterSend({
                 type: 'writeFile',
                 payload: {
                     filename: './storage/serverRefreshTimeAndCount.json',
                     data: [app.locals.lastServerRefreshTime, app.locals.dailyLimit],
                 }
             });
-            fileWriterProcess.send({
+            await fileWriterSend({
                 type: 'writeFile',
                 payload: {
                     filename: './storage/steamGameDetails.json',
                     data: app.locals.steamGameDetails,
                 }
             });
-            fileWriterProcess.send({
+            await fileWriterSend({
                 type: 'writeFile',
                 payload: {
                     filename: './storage/mobileSessions.json',
@@ -577,7 +611,7 @@ setInterval(() => {
                 }
             });
             if (environment === 'development' && app.locals.userOwnedGames) {
-                fileWriterProcess.send({
+                await fileWriterSend({
                     type: 'writeFile',
                     payload: {
                         filename: './storage/userOwnedGames.json',
@@ -590,8 +624,9 @@ setInterval(() => {
                 console.error('Error writing to files occurred...', err);
             }
         }
+        fileWriterProcess.kill();
     }
-}, 15 * 60 * 1000);
+}, 10 * 1000);
 
 const FileStore = sessionfilestore(session);
 const sessionOptions = {

@@ -15,7 +15,7 @@ async function processQueue() {
     }
 
     isProcessing = true;
-    let task = fileQueue.shift();
+    let [requestID, task] = fileQueue.shift();
     const { filename, data, directory = __dirname } = task;
     try {
         await fs.writeFile(path.join(directory, filename),
@@ -26,11 +26,11 @@ async function processQueue() {
             });
         task = null;
         // Send success message back to the parent
-        process.send({ type: 'success', filename: filename });
+        process.send({ type: 'success', filename, requestID });
         // console.log(`Child process: Successfully wrote to ${filePath}`);
     } catch (error) {
         // Send error message back to the parent
-        process.send({ type: 'error', filename: filename, error: error.message });
+        process.send({ type: 'error', filename, error: error.message });
         // console.error(`Child process: Error writing to ${filePath}:`, error);
     } finally {
         isProcessing = false;
@@ -40,7 +40,7 @@ async function processQueue() {
 
 process.on('message', async (message) => {
     if (message.type === 'writeFile') {
-        fileQueue.push(message.payload);
+        fileQueue.push([message.requestID, message.payload]);
         processQueue();
     }
 });

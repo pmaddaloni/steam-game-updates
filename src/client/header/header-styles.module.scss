@@ -30,13 +30,11 @@ $menu-side-padding: 20px;
             width: 40px;
             border-radius: 4px;
             margin-right: 10px;
-
             mask-image: radial-gradient(circle at center,
                     white 50%,
                     /* Inner part is fully visible */
-                    rgba(255, 255, 255, 0) 75%
                     /* Outer part fades to transparent */
-                );
+                    rgba(255, 255, 255, 0) 75%);
             -webkit-mask-image: radial-gradient(
                     /* For older WebKit browsers */
                     circle at center,
@@ -57,6 +55,7 @@ $menu-side-padding: 20px;
         font-family: "Open Sans", sans-serif;
         padding: 0 10px;
         max-width: 500px;
+        flex: 2;
         margin: 0 10px;
 
         &:focus {

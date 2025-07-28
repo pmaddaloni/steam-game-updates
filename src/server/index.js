@@ -703,7 +703,7 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
 
         //  If a user has requested their games we need to process it asap.
         await app.locals.requestQueue.add(
-            makeRequest(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${config.STEAM_API_KEY}&steamid=${userID}&include_appinfo=true&skip_unvetted_apps=false`),
+            makeRequest(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${config.STEAM_API_KEY}&steamid=${userID}&include_appinfo=true&skip_unvetted_apps=true`),
             { priority: 3 }   // Prioritize this request above all others
         )
             .then(response => { result = response })

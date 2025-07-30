@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
+import removeAccents from 'remove-accents';
 import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
@@ -42,6 +43,7 @@ const reducer = (state, { type, value }) => {
                 Object.entries(state.ownedGames).reduce((acc, [key, value]) => {
                     const { name, events } = value
                     if (name.toLowerCase().includes(searchTerm) && events?.length > 0) {
+                    if (removeAccents(name).toLowerCase().includes(searchTerm) && events?.length > 0) {
                         const orderedEvents = events.map(({ posttime }) => [posttime, key]);
                         acc = acc.concat(orderedEvents);
                     }

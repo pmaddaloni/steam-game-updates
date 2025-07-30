@@ -39,7 +39,7 @@ const reducer = (state, { type, value }) => {
             localStorage.removeItem('steam-game-updates-filters');
             return defaultState;
         case 'refreshGames':
-            return { ...state, ownedGames: {}, gameUpdates: [] };
+            return { ...state, ownedGames: {}, gameUpdates: [], loadingProgress: null };
         case 'addOwnedGamesEvents':
             const newOwnedGames = { ...state.ownedGames, ...value };
             // localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(newOwnedGames));

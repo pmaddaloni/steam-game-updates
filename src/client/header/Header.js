@@ -48,6 +48,7 @@ const buttonStyle = {
     padding: '0',
     cursor: 'pointer',
     display: 'inline',
+    transition: 'color 300ms',
 }
 
 const listItemSwitchProps = {
@@ -251,6 +252,7 @@ export default function Header() {
                                     Show:
                                     <div>
                                         <button
+                                            {...listItemProps}
                                             style={{ ...buttonStyle, marginRight: '5px' }}
                                             onClick={() => {
                                                 filtersDispatch('all');
@@ -260,6 +262,7 @@ export default function Header() {
                                             all
                                         </button>
                                         <button
+                                            {...listItemProps}
                                             style={buttonStyle}
                                             onClick={() => {
                                                 filtersDispatch('none');

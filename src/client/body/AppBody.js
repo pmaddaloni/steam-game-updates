@@ -203,7 +203,7 @@ export default function Body() {
                                     <br />
                                     <small><b>**</b>If this isn't the case try logging out and then back in.<b>**</b></small>
                                 </>
-                                : loadingProgress === 100 && ownedGames.length !== 0 ?
+                                : loadingProgress === 100 && filteredList != null ?
                                     <>No search results - try something else...</>
                                     :
                                     <>Gathering patch notes for your owned games - hang tight...</>

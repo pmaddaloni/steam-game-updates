@@ -34,7 +34,10 @@ const defaultState = {
 const reducer = (state, { type, value }) => {
     switch (type) {
         case 'login': return { ...state, ...value };
-        case 'logout': return defaultState;
+        case 'logout':
+            localStorage.removeItem('steam-game-updates-user');
+            localStorage.removeItem('steam-game-updates-filters');
+            return defaultState;
         case 'refreshGames':
             return { ...state, ownedGames: {}, gameUpdates: [] };
         case 'addOwnedGamesEvents':
@@ -77,7 +80,9 @@ const reducer = (state, { type, value }) => {
                         currentFilters[filter] = true;
                     }
                 });
-                return { ...state, filters: Object.keys(currentFilters).map(key => parseInt(key)) };
+                const filters = Object.keys(currentFilters).map(key => parseInt(key));
+                localStorage.setItem('steam-game-updates-filters', JSON.stringify(filters))
+                return { ...state, filters };
             } else {
                 return { ...state, filters: [] }
             }
@@ -93,6 +98,9 @@ export const AuthProvider = function ({ children }) {
 
     useEffect(() => {
         // Populate the context with what's already been stored in local storage.
+        let filters = localStorage.getItem('steam-game-updates-filters');
+        dispatch({ type: 'updateFilters', value: JSON.parse(filters) })
+
         function checkLocalStorageIfLoggedIn() {
             let user = localStorage.getItem('steam-game-updates-user');
             if (user != null) {
@@ -103,7 +111,6 @@ export const AuthProvider = function ({ children }) {
             }
             return user;
         };
-
         (async () => {
             try {
                 const isLoggedInLocally = checkLocalStorageIfLoggedIn();
@@ -116,7 +123,10 @@ export const AuthProvider = function ({ children }) {
                     }
                 }
             } catch (e) {
-                (async () => await localStorage.removeItem('steam-game-updates-user'))();
+                (async () => {
+                    await localStorage.removeItem('steam-game-updates-user');
+                    await localStorage.removeItem('steam-game-updates-filters');
+                })();
                 console.log('User session has expired - need to log in.');
             }
         })();
@@ -243,7 +253,7 @@ export const AuthProvider = function ({ children }) {
 
     return (
         <AuthContext.Provider
-            value={{ ...state, fetchMoreUpdates, getAllUserOwnedGames, dispatch }}
+            value={{ ...state, fetchMoreUpdates, dispatch }}
         >
             {children}
         </AuthContext.Provider>

@@ -97,17 +97,6 @@ export default function Header() {
     const dispatchFilterChanges = type => dispatch({ type: 'updateFilters', value: type });
 
     useEffect(() => {
-        const script = document.createElement('script');
-        script.src = 'path/to/my-dynamic-script.js';
-        script.async = true;
-        document.body.appendChild(script);
-
-        return () => {
-            document.body.removeChild(script); // Clean up on unmount
-        };
-    }, []);
-
-    useEffect(() => {
         setInteractionDisabled(gameUpdates.length === 0);
     }, [gameUpdates])
 
@@ -267,64 +256,86 @@ export default function Header() {
                                                 filtersDispatch('all');
                                                 dispatchFilterChanges('all');
                                             }}
-                                        >all</button>
+                                        >
+                                            all
+                                        </button>
                                         <button
                                             style={buttonStyle}
                                             onClick={() => {
                                                 filtersDispatch('none');
                                                 dispatchFilterChanges('none');
                                             }}
-                                        >none</button>
+                                        >
+                                            none
+                                        </button>
                                     </div>
                                 </li>
-                                <li style={listItemStyle} {...listItemProps} >
+                                <li style={listItemStyle}
+                                    onClick={() => {
+                                        filtersDispatch('major');
+                                        dispatchFilterChanges('major')
+                                    }}
+                                    {...listItemProps}
+                                >
                                     Major Updates
                                     <Switch
                                         checked={filters.major}
-                                        onChange={() => {
-                                            filtersDispatch('major');
-                                            dispatchFilterChanges('major')
-                                        }}
+                                        onChange={() => null}
                                         {...listItemSwitchProps}
                                     />
                                 </li>
-                                <li style={listItemStyle} {...listItemProps}>Minor Updates
+                                <li style={listItemStyle}
+                                    onClick={() => {
+                                        filtersDispatch('minor');
+                                        dispatchFilterChanges('minor');
+                                    }}
+                                    {...listItemProps}
+                                >
+                                    Minor Updates
                                     <Switch
                                         checked={filters.minor}
-                                        onChange={() => {
-                                            filtersDispatch('minor');
-                                            dispatchFilterChanges('minor');
-                                        }}
+                                        onChange={() => null}
                                         {...listItemSwitchProps}
                                     />
                                 </li>
-                                <li style={listItemStyle} {...listItemProps}>Game Events
+                                <li style={listItemStyle}
+                                    onClick={() => {
+                                        filtersDispatch('gameEvents');
+                                        dispatchFilterChanges('gameEvents');
+                                    }}
+                                    {...listItemProps}
+                                >
+                                    Game Events
                                     <Switch
                                         checked={filters.gameEvents}
-                                        onChange={() => {
-                                            filtersDispatch('gameEvents');
-                                            dispatchFilterChanges('gameEvents');
-                                        }}
+                                        onChange={() => null}
                                         {...listItemSwitchProps}
                                     />
                                 </li>
-                                <li style={listItemStyle} {...listItemProps}>News Events
+                                <li style={listItemStyle}
+                                    onClick={() => {
+                                        filtersDispatch('newsEvents');
+                                        dispatchFilterChanges('newsEvents');
+                                    }}
+                                    {...listItemProps}
+                                >News Events
                                     <Switch
                                         checked={filters.newsEvents}
-                                        onChange={() => {
-                                            filtersDispatch('newsEvents');
-                                            dispatchFilterChanges('newsEvents');
-                                        }}
+                                        onChange={() => null}
                                         {...listItemSwitchProps}
                                     />
                                 </li>
-                                <li style={listItemStyle} {...listItemProps}>Cross Posts
+                                <li style={listItemStyle}
+                                    onClick={() => {
+                                        filtersDispatch('crossPosts');
+                                        dispatchFilterChanges('crossPosts');
+                                    }}
+                                    {...listItemProps}
+                                >
+                                    Cross Posts
                                     <Switch
                                         checked={filters.crossPosts}
-                                        onChange={() => {
-                                            filtersDispatch('crossPosts');
-                                            dispatchFilterChanges('crossPosts');
-                                        }}
+                                        onChange={() => null}
                                         {...listItemSwitchProps} />
                                 </li>
                                 <li

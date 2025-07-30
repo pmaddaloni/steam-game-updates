@@ -207,7 +207,7 @@ passport.use(new SteamStrategy({
 }));
 
 const DAILY_LIMIT = 100000;
-const WAIT_TIME = 500;                     // Space out requests to at most 1 request per second
+const WAIT_TIME = 500; //864;                     // Space out requests to keep within 100k a day.
 const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per WAIT_TIME
 
 // Check if storage folders exist, and create if not.
@@ -323,7 +323,6 @@ app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
 app.locals.mobileSessions = new Set(JSON.parse(mobileSessions));
 
 const ensureAuthenticated = function (req, res, next) {
-    console.log(req.user, req.headers)
     if (req.isAuthenticated() || app.locals.mobileSessions.has(req.headers['session-id'])) {
         return next();
     }
@@ -550,7 +549,7 @@ setInterval(async () => {
 
         const fileWriterSend = initializeFileWriterProcess(); // Initialize the child process on server start
         const entries = Object.entries(app.locals.allSteamGamesUpdates);
-        const chunkSize = 7500;
+        const chunkSize = 2000;
         try {
             for (let i = 0; i < entries.length; i += chunkSize) {
                 const nextChunk = i + chunkSize;
@@ -813,7 +812,9 @@ app.get('/api/game-details', ensureAuthenticated, async (req, res) => {
         res.send(app.locals.steamGameDetails[appid]);
         app.locals.dailyLimit--;
     } else {
-        res.status(400).send(new Error(`The limit for requests has been reached: retry later ${req.app.locals.waitBeforeRetrying}, daily limit ${req.app.locals.dailyLimit}`));
+        const errMsg = `The limit for requests has been reached: retry later ${req.app.locals.waitBeforeRetrying}, daily limit ${req.app.locals.dailyLimit}`;
+        console.error(errMsg)
+        res.status(400).send(new Error(errMsg));
     }
 });
 

@@ -10,6 +10,14 @@ const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
+const FILTER_MAPPING = {
+    major: [13, 14],
+    minor: 12,
+    gameEvents: 2,
+    newsEvents: 28,
+    crossPosts: 34
+}
+
 const defaultState = {
     displayName: '',
     id: '',
@@ -20,6 +28,7 @@ const defaultState = {
     gameUpdates: [],     // [ [updateTime, appid], ... ]
     filteredList: null,
     loadingProgress: null,
+    filters: [],
 };
 
 const reducer = (state, { type, value }) => {
@@ -42,7 +51,6 @@ const reducer = (state, { type, value }) => {
             const matchedGames = searchTerm === '' ? null :
                 Object.entries(state.ownedGames).reduce((acc, [key, value]) => {
                     const { name, events } = value
-                    if (name.toLowerCase().includes(searchTerm) && events?.length > 0) {
                     if (removeAccents(name).toLowerCase().includes(searchTerm) && events?.length > 0) {
                         const orderedEvents = events.map(({ posttime }) => [posttime, key]);
                         acc = acc.concat(orderedEvents);
@@ -53,6 +61,26 @@ const reducer = (state, { type, value }) => {
             return { ...state, filteredList }
         case 'updateLoadingProgress':
             return { ...state, loadingProgress: value };
+        case 'updateFilters':
+            // filter out all of these event types
+            if (value === 'none') {
+                return { ...state, filters: Object.values(FILTER_MAPPING).flat() }
+            } else if (value !== 'all') {
+                const incomingFilters = [].concat(FILTER_MAPPING[value]);
+                const currentFilters = state.filters.reduce((acc, filter) => {
+                    return { ...acc, [filter]: true }
+                }, {});
+                incomingFilters.forEach(filter => {
+                    if (currentFilters[filter]) {
+                        delete currentFilters[filter];
+                    } else {
+                        currentFilters[filter] = true;
+                    }
+                });
+                return { ...state, filters: Object.keys(currentFilters).map(key => parseInt(key)) };
+            } else {
+                return { ...state, filters: [] }
+            }
         default: return state;
     };
 };

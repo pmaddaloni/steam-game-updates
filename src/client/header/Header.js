@@ -1,7 +1,10 @@
 import axios from 'axios';
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer, useState } from 'react';
+import Switch from "react-switch";
+import { Popover } from 'react-tiny-popover';
 import LoadingBar from "react-top-loading-bar";
 
+import classNames from 'classnames';
 import { useAuth } from '../AuthContext';
 import styles from './header-styles.module.scss';
 import steamGameUpdatesImg from './steam-game-updates.svg';
@@ -12,51 +15,97 @@ const baseURL = window.location.host.includes('steamgameupdates.info') ?
     (process.env.REACT_APP_LOCALHOST_PORT || ':8080');
 const loginLocation = baseURL + "/api/login";
 
+const popoverStyle = {
+    opacity: '0',
+    transition: 'opacity 200ms',
+    color: 'white',
+    backgroundColor: '#32414c',
+    padding: '10px',
+    border: ' rgb(128, 128, 128) 1px solid',
+    borderRadius: '4px',
+    fontFamily: '"Open Sans", sans-serif',
+    boxShadow: '-4px 8px 24px #959da533',
+    listStyle: 'none',
+    minWidth: '220px',
+};
+
+const listItemStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    margin: '5px 0px',
+    transition: 'color 300ms',
+    userSelect: 'none'
+}
+
+const buttonStyle = {
+    appearance: 'none',
+    background: 'none',
+    border: 'none',
+    font: 'inherit',
+    color: 'white',
+    textDecoration: 'underline',
+    padding: '0',
+    cursor: 'pointer',
+    display: 'inline',
+}
+
+const listItemSwitchProps = {
+    onColor: "#86d3ff",
+    onHandleColor: "#2693e6",
+    uncheckedIcon: false,
+    checkedIcon: false,
+    boxShadow: "0px 1px 5px rgba(0, 0, 0, 0.6)",
+    activeBoxShadow: "0px 0px 1px 10px rgba(0, 0, 0, 0.2)",
+    handleDiameter: 12,
+    height: 7,
+    width: 25,
+    className: "react-switch",
+    id: "material-switch",
+}
+
+const listItemProps = {
+    onMouseOver: e => {
+        e.target.style.color = '#5fb4f0';
+        e.target.style.cursor = 'pointer';
+    },
+    onMouseOut: e => e.target.style.color = 'white'
+}
+
+const defaultFilters = {
+    major: true,
+    minor: true,
+    gameEvents: true,
+    newsEvents: true,
+    crossPosts: true
+}
+
+const reducer = (state, filterToUpdate) => {
+    if (filterToUpdate === 'none' || filterToUpdate === 'all') {
+        return Object.keys(defaultFilters).reduce((acc, key) => {
+            return { ...acc, [key]: filterToUpdate === 'all' }
+        }, {})
+    }
+    return { ...state, [filterToUpdate]: !state[filterToUpdate] };
+}
+
 export default function Header() {
     const { id: userID, displayName, photos, dispatch, gameUpdates, loadingProgress } = useAuth();
     const [interactionDisabled, setInteractionDisabled] = useState(true);
+    const [isPopoverOpen, setIsOpen] = useState(false);
+    const [filters, filtersDispatch] = useReducer(reducer, defaultFilters)
+    const dispatchFilterChanges = type => dispatch({ type: 'updateFilters', value: type });
 
-    const login = async () => {
-        const newWindow = window.open(loginLocation, 'Steam Sign-in',
-            'menubar=1,resizable=1,width=500,height=1000');
-        if (newWindow) {
-            const timer = setInterval(async () => {
-                if (newWindow.closed) {
-                    clearInterval(timer);
-                    try {
-                        const result = await axios.get('/api/user');
-                        if (result?.data) {
-                            localStorage.setItem('steam-game-updates-user', JSON.stringify(result.data));
-                            dispatch({ type: 'login', value: result.data });
-                        }
-                    } catch (err) {
-                        console.error("Error fetching user data after login:", err);
-                    }
-                }
-            }, 500);
-        } else {
-            alert("Failed to open new window to sign in to Steam. Please check your browser settings or popup blockers.");
-            console.error("Failed to open new window. Please check your browser settings or popup blockers.");
-        }
-    };
+    useEffect(() => {
+        const script = document.createElement('script');
+        script.src = 'path/to/my-dynamic-script.js';
+        script.async = true;
+        document.body.appendChild(script);
 
-    const logout = () => {
-        localStorage.removeItem('steam-game-updates-user');
-        dispatch({ type: 'logout' });
-        axios.post('/api/logout', {}, { withCredentials: true })
-    };
-
-    const scrollToTopOfList = (value, target) => {
-        if (target) {
-            target.blur();
-        }
-        const gameList = document.getElementById("game-list");
-        gameList?.scrollTo({
-            top: -100,
-            behavior: 'instant',
-        });
-        setTimeout(dispatch({ type: 'updateSearch', value }), 2000)
-    }
+        return () => {
+            document.body.removeChild(script); // Clean up on unmount
+        };
+    }, []);
 
     useEffect(() => {
         setInteractionDisabled(gameUpdates.length === 0);
@@ -84,6 +133,67 @@ export default function Header() {
             window.removeEventListener('keydown', handleKeyDown);
         };
     }, [dispatch, userID]);
+
+    const login = async () => {
+        const newWindow = window.open(loginLocation, 'Steam Sign-in',
+            'menubar=1,resizable=1,width=500,height=1000');
+        if (newWindow) {
+            const timer = setInterval(async () => {
+                if (newWindow.closed) {
+                    clearInterval(timer);
+                    try {
+                        const result = await axios.get('/api/user');
+                        if (result?.data) {
+                            localStorage.setItem('steam-game-updates-user', JSON.stringify(result.data));
+                            dispatch({ type: 'login', value: result.data });
+                        }
+                    } catch (err) {
+                        console.error("Error fetching user data after login:", err);
+                    }
+                }
+            }, 500);
+        } else {
+            alert("Failed to open new window to sign in to Steam. Please check your browser settings or popup blockers.");
+            console.error("Failed to open new window. Please check your browser settings or popup blockers.");
+        }
+    };
+
+    const logout = () => {
+        if (window.confirm('Are you sure you want to log out?')) {
+            localStorage.removeItem('steam-game-updates-user');
+            dispatch({ type: 'logout' });
+            axios.post('/api/logout', {}, { withCredentials: true })
+        }
+    };
+
+    const scrollToTopOfList = (value, target) => {
+        if (target) {
+            target.blur();
+        }
+        const gameList = document.getElementById("game-list");
+        gameList?.scrollTo({
+            top: -100,
+            behavior: 'instant',
+        });
+        setTimeout(dispatch({ type: 'updateSearch', value }), 2000)
+    }
+
+    const shouldShowPopup = (shouldShow) => {
+        if (shouldShow) {
+            setIsOpen(true);
+            setTimeout(() => {
+                const element = document.getElementById('popover-menu');
+                if (element)
+                    element.style.opacity = 1;
+            }, 90);
+        } else {
+            const element = document.getElementById('popover-menu');
+            element.style.opacity = 0;
+            setTimeout(() => {
+                setIsOpen(false);
+            }, 200)
+        }
+    }
 
     return (
         <>
@@ -130,11 +240,129 @@ export default function Header() {
                     </>
                 }
                 {userID !== '' ?
-                    <div className={styles.menu} >
-                        <img src={photos[0]?.value} alt='user-avatar' />
-                        <div className={styles.user} onClick={logout}>{displayName}</div>
-                        <div className={styles.logout} onClick={logout}>Logout?</div>
-                    </div>
+                    <Popover
+                        isOpen={isPopoverOpen}
+                        positions={['top', 'bottom', 'left', 'right']}
+                        onClickOutside={() => shouldShowPopup(false)}
+                        transform={{ left: -10 }}
+                        transformMode='relative'
+                        content={() => (
+                            <ul
+                                id="popover-menu"
+                                style={{ ...popoverStyle }}
+                            >
+                                <li style={{
+                                    fontSize: '12px',
+                                    fontWeight: 'bold',
+                                    marginBottom: '10px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    userSelect: 'none'
+                                }}>
+                                    Show:
+                                    <div>
+                                        <button
+                                            style={{ ...buttonStyle, marginRight: '5px' }}
+                                            onClick={() => {
+                                                filtersDispatch('all');
+                                                dispatchFilterChanges('all');
+                                            }}
+                                        >all</button>
+                                        <button
+                                            style={buttonStyle}
+                                            onClick={() => {
+                                                filtersDispatch('none');
+                                                dispatchFilterChanges('none');
+                                            }}
+                                        >none</button>
+                                    </div>
+                                </li>
+                                <li style={listItemStyle} {...listItemProps} >
+                                    Major Updates
+                                    <Switch
+                                        checked={filters.major}
+                                        onChange={() => {
+                                            filtersDispatch('major');
+                                            dispatchFilterChanges('major')
+                                        }}
+                                        {...listItemSwitchProps}
+                                    />
+                                </li>
+                                <li style={listItemStyle} {...listItemProps}>Minor Updates
+                                    <Switch
+                                        checked={filters.minor}
+                                        onChange={() => {
+                                            filtersDispatch('minor');
+                                            dispatchFilterChanges('minor');
+                                        }}
+                                        {...listItemSwitchProps}
+                                    />
+                                </li>
+                                <li style={listItemStyle} {...listItemProps}>Game Events
+                                    <Switch
+                                        checked={filters.gameEvents}
+                                        onChange={() => {
+                                            filtersDispatch('gameEvents');
+                                            dispatchFilterChanges('gameEvents');
+                                        }}
+                                        {...listItemSwitchProps}
+                                    />
+                                </li>
+                                <li style={listItemStyle} {...listItemProps}>News Events
+                                    <Switch
+                                        checked={filters.newsEvents}
+                                        onChange={() => {
+                                            filtersDispatch('newsEvents');
+                                            dispatchFilterChanges('newsEvents');
+                                        }}
+                                        {...listItemSwitchProps}
+                                    />
+                                </li>
+                                <li style={listItemStyle} {...listItemProps}>Cross Posts
+                                    <Switch
+                                        checked={filters.crossPosts}
+                                        onChange={() => {
+                                            filtersDispatch('crossPosts');
+                                            dispatchFilterChanges('crossPosts');
+                                        }}
+                                        {...listItemSwitchProps} />
+                                </li>
+                                <li
+                                    style={{ ...listItemStyle, marginTop: '25px', display: 'flex', justifyContent: 'space-between', cursor: 'default' }}
+                                >
+                                    <div
+                                        style={{ transition: 'color 300ms' }}
+                                        {...listItemProps} onClick={() => logout()}>Logout</div>
+                                    <div
+                                        onClick={() => window.open('https://ko-fi.com/mondobodacious', '_blank')}
+                                        style={{
+                                            backgroundColor: '#00b4f7',
+                                            borderRadius: '100px',
+                                            height: '26px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            fontFamily: "'Nunito', 'Quicksand', sans-serif",
+                                            fontSize: '16px',
+                                            width: 'max-content',
+                                            color: '#fff',
+                                            justifyContent: 'space-between',
+                                            padding: '0 10px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                        }}>
+                                        <img style={{ width: '24px' }} src="https://storage.ko-fi.com/cdn/cup-border.png" alt="ko-fi" />
+                                        <span style={{ fontSize: '9px', marginLeft: "8px", color: "#323842" }}>Enjoying?<br />Many Thanks!</span>
+                                    </div>
+                                </li>
+                            </ul>
+                        )}
+                    >
+                        <div className={classNames(interactionDisabled ? styles['menu-disabled'] : null, isPopoverOpen ? styles.active : null, styles.menu)} onClick={() => shouldShowPopup(!isPopoverOpen)}>
+                            <img src={photos[0]?.value} alt='user-avatar' />
+                            <div className={styles.user} >{displayName}</div>
+                            <div className={styles['menu-caret']}>&#x2304;</div>
+                        </div>
+                    </Popover>
                     : <button className={styles.login} onClick={login} />
                 }
             </div>

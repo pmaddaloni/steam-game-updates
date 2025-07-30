@@ -8,7 +8,7 @@ import logo from './steam-logo.svg';
 
 export default function Body() {
     const itemsPerPage = 25;
-    const { id, gameUpdates, ownedGames, filteredList, loadingProgress } = useAuth();
+    const { id, gameUpdates, ownedGames, filteredList, filters, loadingProgress } = useAuth();
     const [currentIndex, setCurrentIndex] = useState(0);
     const [selectedGame, setSelectedGame] = useState(null);
     const [filteredComponents, setFilteredComponents] = useState(null);
@@ -17,17 +17,17 @@ export default function Body() {
     const shownEventsRef = useRef({}); // {[appid]: # of times it's in the list}
     const timeoutId = useRef(null);
 
-    const createGameComponents = useCallback((components, index = 0) => {
+    const createGameComponents = useCallback((gamesList, index = 0) => {
         const shownEvents = shownEventsRef.current;
         let componentIndex = currentGameComponentsRef.current.length;
-        const gamesArray = components.slice(index, index + itemsPerPage);
+        const gamesArray = gamesList.slice(index, index + itemsPerPage);
         const result = currentGameComponentsRef.current.concat(gamesArray
             .reduce((acc, [, appid]) => {
                 const { events, name } = ownedGames[appid] ?? {};
                 if (events != null && events.length > 0) {
                     shownEvents[appid] = (shownEvents[appid] ?? -1) + 1
                     const update = events[shownEvents[appid]];
-                    if (update != null) {
+                    if (update != null && !filters.includes(update.event_type)) {
                         acc.push(
                             <GameUpdateListComponent
                                 eventIndex={shownEvents[appid]}
@@ -45,12 +45,13 @@ export default function Body() {
             }, []));
         currentGameComponentsRef.current = result;
         return result;
-    }, [ownedGames]);
+    }, [filters, ownedGames]);
 
     useEffect(() => {
         currentGameComponentsRef.current = [];
         setSelectedGame(null);
         setCurrentIndex(0);
+        shownEventsRef.current = {};
         if (filteredList != null) {
             const filteredGameComponents = createGameComponents(filteredList);
             setFilteredComponents(filteredGameComponents);
@@ -63,6 +64,7 @@ export default function Body() {
         currentGameComponentsRef.current = [];
         setSelectedGame(null);
         setCurrentIndex(0);
+        shownEventsRef.current = {};
         const gameComponents = createGameComponents(gameUpdates);
         setGameComponents(gameComponents);
     }, [createGameComponents, gameUpdates]);
@@ -201,8 +203,10 @@ export default function Body() {
                                     <br />
                                     <small><b>**</b>If this isn't the case try logging out and then back in.<b>**</b></small>
                                 </>
-                                :
-                                <>Gathering patch notes for your owned games - hang tight...</>
+                                : loadingProgress === 100 && ownedGames.length !== 0 ?
+                                    <>No search results - try something else...</>
+                                    :
+                                    <>Gathering patch notes for your owned games - hang tight...</>
                         }
                     </p>
                 </div> :

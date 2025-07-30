@@ -106,11 +106,26 @@ $menu-side-padding: 20px;
 
     button.login,
     .menu {
+        transition: box-shadow 0.2s ease-in-out;
+        border-radius: 15px;
+        user-select: none;
+
+        &.menu-disabled {
+            pointer-events: none;
+            cursor: default;
+            opacity: 0.5;
+        }
 
         .user {
             width: 140px;
             opacity: 100%;
             transition: opacity 200ms;
+        }
+
+        .menu-caret {
+            align-self: flex-start;
+            font-size: larger;
+            margin-left: 4px;
         }
 
         .logout {
@@ -120,25 +135,17 @@ $menu-side-padding: 20px;
             width: 140px;
         }
 
-        &:hover {
+        &:hover,
+        &.active {
             cursor: pointer;
-
-            .user {
-                visibility: hidden;
-                margin-right: 0;
-            }
-
-            .logout {
-                opacity: 100;
-                transition: 200ms;
-                z-index: 2;
-            }
+            box-shadow: -4px -1px 8px 5px #5fb4f0;
         }
     }
 
     .menu {
         display: flex;
         align-items: center;
+        height: fit-content;
         padding-right: $menu-side-padding;
 
         img {

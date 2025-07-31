@@ -317,7 +317,7 @@ app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
 app.locals.userOwnedGames = environment === 'development' ? JSON.parse(userOwnedGames) : null;
 app.locals.waitBeforeRetrying = false;
 const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
-app.locals.dailyLimit = lastDailyLimitUsage - 200; // Playing it safe and always giving a buffer on startup of 200 less requests so as not to overwhelm the API
+app.locals.dailyLimit = lastDailyLimitUsage;
 app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
 // Since passport isn't properly tracking mobile sessions, we need to track them ourselves.
 // We generate our own UUIDs to check against for the mobile app.

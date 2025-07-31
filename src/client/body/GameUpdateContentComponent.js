@@ -23,7 +23,8 @@ function formatTextToHtml(text) {
                 } else if (word === '[u]') {
                     html += '<u>';
                 } else if (word === '[/u]') {
-                    html += '</u>';
+                    html = html.trimEnd();
+                    html += '</u> ';
                 } else if (word === '[p]') {
                     html += '<p>';
                 } else if (word === '[/p]') {

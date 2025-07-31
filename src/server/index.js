@@ -206,9 +206,10 @@ passport.use(new SteamStrategy({
     });
 }));
 
-const DAILY_LIMIT = 100000;
-const WAIT_TIME = 500; //864;                     // Space out requests to keep within 100k a day.
-const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per WAIT_TIME
+const DAILY_LIMIT = 200000;
+const RETRY_WAIT_TIME = 5 * 60 * 1000;      // Time in minutes
+const REQUEST_WAIT_TIME = 500;              // 864 would keep within 100k a day, but it appears there is no limit on updates
+const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per REQUEST_WAIT_TIME
 
 // Check if storage folders exist, and create if not.
 const passportSessionsDirectoryPath = path.join(__dirname, './storage/passport-sessions');
@@ -272,7 +273,7 @@ const userOwnedGames = environment === 'development' &&
     : '{}';
 
 const app = express();
-app.locals.requestQueue = new PQueue({ interval: WAIT_TIME, intervalCap: NUMBER_OF_REQUESTS_PER_WAIT_TIME });
+app.locals.requestQueue = new PQueue({ interval: REQUEST_WAIT_TIME, intervalCap: NUMBER_OF_REQUESTS_PER_WAIT_TIME });
 app.locals.gameIDsToCheckPriorityQueue = new PriorityQueue();
 
 function makeRequest(url, method = 'get') {
@@ -433,7 +434,7 @@ setInterval(async () => {
                 app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
             } else {
                 app.locals.waitBeforeRetrying = true;
-                setTimeout(() => app.locals.waitBeforeRetrying = false, 60 * 5 * 1000);
+                setTimeout(() => app.locals.waitBeforeRetrying = false, RETRY_WAIT_TIME);
             }
         });
     }
@@ -496,11 +497,11 @@ const getGameUpdates = async (externalGameID) => {
                         }
                     });
                 }
-                console.log(`Getting the game ${gameID}'s updates completed with ${app.locals.allSteamGamesUpdates[gameID]?.length ?? 0} event(s), with ${app.locals.dailyLimit} requests left.`);
+                console.log(`Getting the game ${gameID}'s updates completed with ${app.locals.allSteamGamesUpdates[gameID]?.length ?? 0} event(s), with ${DAILY_LIMIT - app.locals.dailyLimit} requests so far.`);
             } else if (result.status === 429 || result.status === 403) {
                 if (result.status === 429 || result.retryAfter != null) {
                     app.locals.waitBeforeRetrying = true;
-                    setTimeout(() => app.locals.waitBeforeRetrying = false, (result.retryAfter ?? 60 * 5) * 1000);
+                    setTimeout(() => app.locals.waitBeforeRetrying = false, result.retryAfter != null ? result.retryAfter * 1000 : RETRY_WAIT_TIME);
                 } else {
                     //  Steam is refusing requests and hasn't given a retry time, so let's backoff for the rest of the day.
                     app.locals.dailyLimit = 0; // Stop processing any more requests for the day.
@@ -533,7 +534,7 @@ const getGameUpdates = async (externalGameID) => {
 // Constraint of 100000k allows for an average of one request every 0.86 seconds over 24 hours.
 // Constraint of 200 per 5 minutes restricts to no more than one request every 1.5 seconds within any 5 - minute window.
 // 200 constraint doesn't appear to affect this request...
-setInterval(getGameUpdates, WAIT_TIME);
+setInterval(getGameUpdates, REQUEST_WAIT_TIME);
 
 // FILE WRITE
 // Save the results every five minute so we don't lose them if the server restarts/crashes.
@@ -549,7 +550,7 @@ setInterval(async () => {
 
         const fileWriterSend = initializeFileWriterProcess(); // Initialize the child process on server start
         const entries = Object.entries(app.locals.allSteamGamesUpdates);
-        const chunkSize = 2000;
+        const chunkSize = 1000;
         try {
             for (let i = 0; i < entries.length; i += chunkSize) {
                 const nextChunk = i + chunkSize;
@@ -710,7 +711,7 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
                 console.error(`\nGetting the user ${req.query.id}'s owned games FAILED with code "${err.response?.status}"`
                     + ` and message "${err.response.statusText} (no code means the server didn't responsd).\n`, err);
                 app.locals.waitBeforeRetrying = true;
-                setTimeout(() => app.locals.waitBeforeRetrying = false, (err.response.retryAfter ?? 1000 * 60 * 5) * 1000);
+                setTimeout(() => app.locals.waitBeforeRetrying = false, err.response.retryAfter != null ? err.response.retryAfter * 1000 : RETRY_WAIT_TIME);
             });
         app.locals.dailyLimit--;
         console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count ?? 'no'} games`);

@@ -51,6 +51,20 @@ const buttonStyle = {
     transition: 'color 300ms',
 }
 
+const buttonStyleDisabled = {
+    appearance: 'none',
+    background: 'none',
+    border: 'none',
+    font: 'inherit',
+    color: 'white',
+    textDecoration: 'underline',
+    padding: '0',
+    cursor: 'default',
+    display: 'inline',
+    pointerEvents: 'none',
+    opacity: '0.5',
+}
+
 const listItemSwitchProps = {
     onColor: "#86d3ff",
     onHandleColor: "#2693e6",
@@ -185,6 +199,9 @@ export default function Header() {
         }
     }
 
+    const allButtonDisabled = Object.values(filters).every(filter => filter === true);
+    const noneButtonDisabled = Object.values(filters).every(filter => filter === false);
+
     return (
         <>
             <div className={styles.header}>
@@ -253,7 +270,8 @@ export default function Header() {
                                     <div>
                                         <button
                                             {...listItemProps}
-                                            style={{ ...buttonStyle, marginRight: '5px' }}
+                                            disabled={allButtonDisabled}
+                                            style={{ ...(allButtonDisabled ? buttonStyleDisabled : buttonStyle), marginRight: '5px' }}
                                             onClick={() => {
                                                 filtersDispatch('all');
                                                 dispatchFilterChanges('all');
@@ -263,7 +281,8 @@ export default function Header() {
                                         </button>
                                         <button
                                             {...listItemProps}
-                                            style={buttonStyle}
+                                            disabled={noneButtonDisabled}
+                                            style={noneButtonDisabled ? buttonStyleDisabled : buttonStyle}
                                             onClick={() => {
                                                 filtersDispatch('none');
                                                 dispatchFilterChanges('none');

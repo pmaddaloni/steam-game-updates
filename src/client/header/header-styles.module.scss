@@ -106,9 +106,6 @@ $menu-side-padding: 20px;
 
     button.login,
     .menu {
-        transition: box-shadow 0.2s ease-in-out;
-        border-radius: 15px;
-        user-select: none;
 
         &.menu-disabled {
             pointer-events: none;
@@ -143,6 +140,10 @@ $menu-side-padding: 20px;
     }
 
     .menu {
+        transition: box-shadow 0.2s ease-in-out;
+        border-radius: 15px;
+        user-select: none;
+
         display: flex;
         align-items: center;
         height: fit-content;

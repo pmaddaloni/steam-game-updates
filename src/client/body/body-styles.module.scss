@@ -12,6 +12,7 @@ $padding: 20px;
         sans-serif;
     // font-size: calc(10px + 2vmin);
     color: white;
+    position: fixed;
     padding-top: vars.$header-height;
 
     .loading-container {
@@ -21,7 +22,6 @@ $padding: 20px;
 
 .container {
     display: flex;
-    position: fixed;
     overflow: clip;
     width: 100vw;
     max-height: 100vh;
@@ -137,7 +137,6 @@ $padding: 20px;
         overflow-x: auto;
         overflow-y: scroll;
         min-width: 50vw;
-        width: 70vw;
         max-height: 100vh;
 
         .update {

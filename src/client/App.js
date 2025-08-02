@@ -14,7 +14,7 @@ axios.defaults.maxRedirects = 0; // Set to 0 to prevent automatic redirects
 axios.interceptors.response.use(
   response => response,
   error => {
-    if (error.response && [301, 302].includes(error.response.status)) {
+    if (error.response && [301, 302, 307, 308].includes(error.response.status)) {
       const redirectUrl = error.response.headers.location;
       return axios[error.config.method](redirectUrl);
     }

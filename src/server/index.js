@@ -749,8 +749,8 @@ app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
     // }
 });
 
-app.get('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const gameIDs = Object.values(req.query.appids ?? {}).map(gameID => parseInt(gameID, 10));
+app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
+    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID, 10));
     const updates = []; // An array of {appid: gameID, events: []} in order of most recently updated
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {

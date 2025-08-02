@@ -22,7 +22,7 @@ axios.interceptors.response.use(
 
 async function getMostRecentUpdates(ownedGames) {
     const gameIDs = Object.keys(ownedGames);
-    const gameIDsToBeFetchedSize = 500; // Break up a person's library into chunks of 500 so as not to overwhelm the API
+    const gameIDsToBeFetchedSize = 1000; // Break up a person's library into chunks of 500 so as not to overwhelm the API
     postMessage({ loadingProgress: 0 });
     try {
         let gameUpdatesIDs = [];
@@ -31,11 +31,8 @@ async function getMostRecentUpdates(ownedGames) {
                 .splice(0, gameIDsToBeFetchedSize);
             // Need to fetch all of them up front, not incrementally
             // because you don't know where the most recently updated game is in the list...
-            const result = await axios.get('/api/game-updates-for-owned-games',
-                {
-                    params: { appids: gameIDsToBeFetched, },
-                    paramsSerializer: { indexes: true }     // i.e. use brackets with indexes
-                });
+            const result = await axios.post('/api/game-updates-for-owned-games',
+                { appids: gameIDsToBeFetched });
             const { updates } = result.data;
             const filteredUpdates = updates.filter(({ events }) => events?.length > 0);
             // Sort the updates for each game by posttime, descending

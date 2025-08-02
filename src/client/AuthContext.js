@@ -189,7 +189,7 @@ export const AuthProvider = function ({ children }) {
                     }
                 } else if (appid != null && state.ownedGames[appid] != null && eventsLength > 0) {
                     // If the appid is present, it means a specific game has updated.
-                    console.log(`Notified of ${eventsLength} update(s) for game ${appid} (${state.ownedGames[appid].name})`);
+                    // console.log(`Notified of ${eventsLength} update(s) for game ${appid} (${state.ownedGames[appid].name})`);
                     const name = state.ownedGames[appid].name;
                     const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
                     notifyUser(name, icon, backupLogo);

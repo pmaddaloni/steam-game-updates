@@ -821,7 +821,7 @@ app.get('/api/game-details', ensureAuthenticated, async (req, res) => {
 });
 
 app.get('/api/login', function (req, res) {
-    res.redirect('/auth/steam');
+    res.redirect('/api/auth/steam');
 });
 
 app.post('/api/logout', function (req, res) {
@@ -834,7 +834,7 @@ app.post('/api/logout', function (req, res) {
 });
 
 app.get('/api/login/ios', function (req, res) {
-    res.redirect(`/auth/steam?redirect_uri=${req.query.redirect_uri}&state=${req.query.state}`,);
+    res.redirect(`/api/auth/steam?redirect_uri=${req.query.redirect_uri}&state=${req.query.state}`,);
 });
 
 app.post('/api/logout/ios', function (req, res) {
@@ -848,7 +848,7 @@ app.post('/api/logout/ios', function (req, res) {
 //   request.  The first step in Steam authentication will involve redirecting
 //   the user to steamcommunity.com.  After authenticating, Steam will redirect the
 //   user back to this application at /auth/steam/return
-app.get('/auth/steam', (req, res, next) => {
+app.get('/api/auth/steam', (req, res, next) => {
     const { redirect_uri, state } = req.query
     if (redirect_uri) {
         req.session.oauthRedirectUri = redirect_uri;
@@ -859,7 +859,7 @@ app.get('/auth/steam', (req, res, next) => {
     authenticator(req, res, next)
 });
 
-// GET /auth/steam/return
+// GET /api/auth/steam/return
 //   Use passport.authenticate() as route middleware to authenticate the
 //   request.  If authentication fails, the user will be redirected back to the
 //   login page.  Otherwise, the primary route function function will be called,

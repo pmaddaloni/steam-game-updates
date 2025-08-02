@@ -22,7 +22,7 @@ axios.interceptors.response.use(
 
 async function getMostRecentUpdates(ownedGames) {
     const gameIDs = Object.keys(ownedGames);
-    const gameIDsToBeFetchedSize = 1000; // Break up a person's library into chunks of 500 so as not to overwhelm the API
+    const gameIDsToBeFetchedSize = 150; // Break up a person's library into chunks of 500 so as not to overwhelm the API
     postMessage({ loadingProgress: 0 });
     try {
         let gameUpdatesIDs = [];

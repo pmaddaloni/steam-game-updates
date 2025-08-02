@@ -1,6 +1,6 @@
 <% if (!user) { %>
     <h2>Something went wrong - please try to sign in again!</h2>
-    <p><a href="auth/steam">Sign On with Steam</a></p>
+    <p><a href="/api/auth/steam">Sign On with Steam</a></p>
     <% } else { %>
         <h2>Hello, <%= user.personaname ?? user.realname %>. You can close this window or <a href='logout'>Logout</a>
         </h2>

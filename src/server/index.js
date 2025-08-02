@@ -648,7 +648,7 @@ if (environment !== 'development') {
     };
 }
 app.use(session(sessionOptions));
-// app.set('trust proxy', 1);
+app.set('trust proxy', 1);
 // Initialize Passport and use passport.session() middleware to support persistent login sessions.
 app.use(passport.initialize());
 app.use(passport.session());

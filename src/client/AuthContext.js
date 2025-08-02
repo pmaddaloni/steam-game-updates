@@ -4,8 +4,8 @@ import removeAccents from 'remove-accents';
 import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
-const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
-    'wss://https://steamgameupdates.info/websocket' : 'ws://' + (process.env.REACT_APP_WEBSOCKET || 'localhost:8081');
+const WEB_SOCKET_PATH = true || window.location.host.includes('steamgameupdates.info') ?
+    'wss://steam-game-updates.info/ws' : 'ws://' + (process.env.REACT_APP_WEBSOCKET || 'localhost:8081');
 
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);

@@ -8,7 +8,7 @@ import PQueue from 'p-queue';
 import passport from 'passport';
 import SteamStrategy from 'passport-steam';
 // import SteamStrategy from 'modern-passport-steam';
-import { createServer } from 'https';
+// import { createServer } from 'https';
 import path from 'path';
 import pidusage from 'pidusage';
 import sessionfilestore from 'session-file-store';
@@ -382,12 +382,13 @@ console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates)
 
 // START Steam Game Updates WebSocket connection
 const webSocketServerOptions = { port: 8081 };
-if (environment !== 'development') {
-    webSocketConnectWithRetry.server = createServer({
-        key: fs.readFileSync(config.SSL_KEY_PATH),
-        cert: fs.readFileSync(config.SSL_CERT_PATH),
-    });
-}
+// For now NGINX handles the secure connection to the outside world
+// if (environment !== 'development') {
+//     webSocketServerOptions.server = createServer({
+//         key: fs.readFileSync(config.SSL_KEY_PATH),
+//         cert: fs.readFileSync(config.SSL_CERT_PATH),
+//     });
+// }
 const wss = new WebSocketServer(webSocketServerOptions);
 wss.on('connection', function connection(ws) {
     console.log('WebSocket connection established with a client');
@@ -881,15 +882,20 @@ app.get('/api/auth/steam/return',
     });
 
 const PORT = process.env.PORT || 8080;
-if (environment === 'development') {
-    app.listen(PORT, () => {
-        console.log(`server listening on port ${PORT}`);
-    });
-} else {
-    const options = {
-        key: fs.readFileSync(config.SSL_KEY_PATH),
-        cert: fs.readFileSync(config.SSL_CERT_PATH),
-    };
+app.listen(PORT, () => {
+    console.log(`server listening on port ${PORT}`);
+});
 
-    createServer(options, app).listen(PORT);
-}
+// For now NGINX handles the secure connection to the outside world
+// if (environment === 'development') {
+//     app.listen(PORT, () => {
+//         console.log(`server listening on port ${PORT}`);
+//     });
+// } else {
+//     const options = {
+//         key: fs.readFileSync(config.SSL_KEY_PATH),
+//         cert: fs.readFileSync(config.SSL_CERT_PATH),
+//     };
+//     console.log(`server listening on port ${PORT}`);
+//     createServer(options, app).listen(PORT);
+// }

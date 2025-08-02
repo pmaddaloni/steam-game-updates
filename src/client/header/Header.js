@@ -249,10 +249,12 @@ export default function Header() {
                 {userID !== '' ?
                     <Popover
                         isOpen={isPopoverOpen}
-                        positions={['top', 'bottom', 'left', 'right']}
+                        positions={['bottom']}
                         onClickOutside={() => shouldShowPopup(false)}
-                        transform={{ left: -10 }}
+                        transform={{ left: -20 }}
                         transformMode='relative'
+                        reposition={true}
+                        containerStyle={{ position: 'fixed', zIndex: '1000000000' }}
                         content={() => (
                             <ul
                                 id="popover-menu"

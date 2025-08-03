@@ -770,8 +770,8 @@ app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, r
     res.send({ updates });
 });
 
-app.get('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const gameIDs = Object.values(req.query.appids ?? {}).map(gameID => parseInt(gameID, 10));
+app.post('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req, res) => {
+    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID, 10));
     const lastCheckTime = parseInt(req.query.last_check_time)   // this is ms
     const gameIDsWithUpdates = [];
     // Iterate through all passed in games and add them if found

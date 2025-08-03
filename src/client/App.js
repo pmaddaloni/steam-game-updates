@@ -6,7 +6,7 @@ import Header from './header/Header.js';
 
 // https://create-react-app.dev/docs/adding-custom-environment-variables/#adding-development-environment-variables-in-env
 axios.defaults.baseURL = window.location.host.includes('steamgameupdates.info') ?
-  'https://steamgameupdates.info' :
+  'https://api.steamgameupdates.info' :
   (process.env.REACT_APP_LOCALHOST || 'http://localhost') +
   (process.env.REACT_APP_LOCALHOST_PORT || ':8080');
 axios.defaults.withCredentials = true;

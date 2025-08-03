@@ -5,7 +5,7 @@ import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
 const WEB_SOCKET_PATH = true || window.location.host.includes('steamgameupdates.info') ?
-    'wss://steam-game-updates.info/ws' : 'ws://' + (process.env.REACT_APP_WEBSOCKET || 'localhost:8081');
+    'wss://api.steamgameupdates.info/ws' : 'ws://' + (process.env.REACT_APP_WEBSOCKET || 'localhost:8081');
 
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);

@@ -3,7 +3,7 @@ import axios from 'axios';
 // Using self is valid within a web worker.
 // eslint-disable-next-line no-restricted-globals
 axios.defaults.baseURL = self.location.host.includes('steamgameupdates.info') ?
-    'https://steamgameupdates.info' :
+    'https://api.steamgameupdates.info' :
     (process.env.REACT_APP_LOCALHOST || 'http://localhost') +
     (process.env.REACT_APP_LOCALHOST_PORT || ':8080');
 // https://create-react-app.dev/docs/adding-custom-environment-variables/#adding-development-environment-variables-in-env

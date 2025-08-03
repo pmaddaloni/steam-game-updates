@@ -10,7 +10,7 @@ import styles from './header-styles.module.scss';
 import steamGameUpdatesImg from './steam-game-updates.svg';
 
 const baseURL = window.location.host.includes('steamgameupdates.info') ?
-    'https://steamgameupdates.info' :
+    'https://api.steamgameupdates.info' :
     (process.env.REACT_APP_LOCALHOST || 'http://localhost') +
     (process.env.REACT_APP_LOCALHOST_PORT || ':8080');
 const loginLocation = baseURL + "/api/login";

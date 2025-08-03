@@ -113,7 +113,7 @@ function formatTextToHtml(text) {
                     html += '<details><summary>Spoilers!</summary><div>';
                 } else if (word === '[/spoiler]') {
                     html += '</div></details>';
-                } else if (word === '[carousel]' || word === '[/carousel]') {
+                } else if (word.startsWith('[carousel') || word === '[/carousel]') {
                     continue;
                 } else {
                     html += (word ?? '') + ' ';

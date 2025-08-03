@@ -10,17 +10,6 @@ axios.defaults.baseURL = window.location.host.includes('steamgameupdates.info') 
   (process.env.REACT_APP_LOCALHOST || 'http://localhost') +
   (process.env.REACT_APP_LOCALHOST_PORT || ':8080');
 axios.defaults.withCredentials = true;
-axios.defaults.maxRedirects = 0; // Set to 0 to prevent automatic redirects
-axios.interceptors.response.use(
-  response => response,
-  error => {
-    if (error.response && [301, 302, 307, 308].includes(error.response.status)) {
-      const redirectUrl = error.response.headers.location;
-      return axios[error.config.method](redirectUrl);
-    }
-    return Promise.reject(error);
-  }
-);
 
 function App() {
   return (

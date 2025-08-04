@@ -25,17 +25,17 @@ onmessage = async ({ data: { ownedGames, totaleNumberOfRequests } }) => {
     try {
         // generate a UUID
         // first post all messages along with this UUID
-        // then loop asking for all of the results page per page
+        // then loop asking for all of games bit by bit
         // after the first page returns, emit a result to the main thread but instead of overriding, append on to it.
         // Need to fetch all of them up front, not incrementally
         // because you don't know where the most recently updated game is in the list...
-        let result = await axios.post('/api/game-updates-for-owned-games', { appids: gameIDs, request_id: requestID });
+        let result = await axios.post('/api/beta/game-updates-for-owned-games', { appids: gameIDs, request_id: requestID });
         const { gameUpdatesIDs } = result.data;
         postMessage({ gameUpdatesIDs });
         postMessage({ loadingProgress: (++numberOfRequestsSoFar / totaleNumberOfRequests) * 100 });
         do {
             const ownedGamesWithUpdates = {};
-            const result = await axios.get('/api/game-updates-for-owned-games',
+            const result = await axios.get('/api/beta/game-updates-for-owned-games',
                 { params: { request_id: requestID, requestSize } });
             const { updates, hasMore } = result.data;
             for (const [appid, events] of Object.entries(updates)) {

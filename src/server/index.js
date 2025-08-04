@@ -333,7 +333,11 @@ const ensureAuthenticated = function (req, res, next) {
     res.sendStatus(401);
 }
 
-async function getGameIDUpdates(gameID, prioritizedRequest = false) {
+async function getGameIDUpdates(
+    gameID,
+    prioritizedRequest = false,
+    include_count_before = true,
+    include_count_after = true) {
     let result = null;
     if (gameID == null) {
         return {
@@ -344,7 +348,11 @@ async function getGameIDUpdates(gameID, prioritizedRequest = false) {
     try {
         const response =
             await app.locals.requestQueue.add(
-                makeRequest(`https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=${gameID}`),
+                makeRequest(
+                    'https://store.steampowered.com/events/ajaxgetadjacentpartnerevents' +
+                        `?appid=${gameID}` +
+                        include_count_before ? '&count_before=0' : '' +
+                            include_count_after ? '&count_after=0' : ''),
                 { priority: prioritizedRequest ? 2 : 0 }
             );
         result = response.data;
@@ -367,6 +375,20 @@ async function getGameIDUpdates(gameID, prioritizedRequest = false) {
                 status: 403,
                 retryAfter: resultRetryAfter
             }
+        } else if (err.response?.data.eresult === 42 &&
+            (include_count_before || include_count_after)) {
+            // retry in this order, after using both params failed:
+            // 1. Try with count_before as false, but count_after is true.
+            // 2. If #1 fails, then try with count_before being true, and count_after as false.
+            // 3. If #2 fails try both as false.
+            // 4. If that fails then give up.
+            getGameIDUpdates(
+                gameID,
+                prioritizedRequest,
+                (!include_count_before || include_count_after) &&
+                !(include_count_before && include_count_after),
+                include_count_before && include_count_after
+            )
         } else {
             // Something went wrong other than rate limiting
             result = {
@@ -755,7 +777,7 @@ const tempMap = {};
 // create a GET endpoint that returns paginated results
 // once the end is reached, delete the temp map entry
 
-app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
+app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
     const requestID = req.body.request_id;
     if (requestID == null) {
@@ -786,7 +808,7 @@ app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, r
     res.send({ gameUpdatesIDs });
 });
 
-app.get('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
+app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const requestID = req.query.request_id;
     const requestSize = parseInt(req.query.fetch_size ?? '150');
     let updatesChunk = {};
@@ -821,6 +843,27 @@ app.get('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, re
     } catch {
         res.sendStatus(404);
     }
+});
+
+app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
+    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID, 10));
+    const updates = []; // An array of {appid: gameID, events: []} in order of most recently updated
+    // Iterate through all passed in games and add them if found
+    for (const gameID of gameIDs) {
+        // (The gameID is the second element in the array)
+        const events = app.locals.allSteamGamesUpdates[gameID];
+        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime * 1000 ?? 0)) {
+            // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
+            app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
+        }
+        updates.push(
+            {
+                appid: gameID,
+                events: app.locals.allSteamGamesUpdates[gameID],
+            }
+        );
+    }
+    res.send({ updates });
 });
 
 app.post('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req, res) => {

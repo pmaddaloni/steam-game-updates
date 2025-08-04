@@ -21,28 +21,28 @@ export default function Body() {
         const shownEvents = shownEventsRef.current;
         let componentIndex = currentGameComponentsRef.current.length;
         const gamesArray = gamesList.slice(index, index + itemsPerPage);
-        const result = currentGameComponentsRef.current.concat(gamesArray
-            .reduce((acc, [, appid]) => {
-                const { events, name } = ownedGames[appid] ?? {};
-                if (events != null && events.length > 0) {
-                    shownEvents[appid] = (shownEvents[appid] ?? -1) + 1
-                    const update = events[shownEvents[appid]];
-                    if (update != null && !filters.includes(update.event_type)) {
-                        acc.push(
-                            <GameUpdateListComponent
-                                eventIndex={shownEvents[appid]}
-                                key={appid + '-' + update?.posttime}
-                                appid={appid}
-                                name={name}
-                                update={update}
-                                setSelectedGame={setSelectedGame}
-                                index={componentIndex++}
-                            />
-                        )
-                    }
+        const newList = gamesArray.reduce((acc, [, appid]) => {
+            const { events, name } = ownedGames[appid] ?? {};
+            if (events != null && events.length > 0) {
+                shownEvents[appid] = (shownEvents[appid] ?? -1) + 1
+                const update = events[shownEvents[appid]];
+                if (update != null && !filters.includes(update.event_type)) {
+                    acc.push(
+                        <GameUpdateListComponent
+                            eventIndex={shownEvents[appid]}
+                            key={appid + '-' + update?.posttime}
+                            appid={appid}
+                            name={name}
+                            update={update}
+                            setSelectedGame={setSelectedGame}
+                            index={componentIndex++}
+                        />
+                    )
                 }
-                return acc;
-            }, []));
+            }
+            return acc;
+        }, []);
+        const result = index !== 0 ? currentGameComponentsRef.current.concat(newList) : newList;
         currentGameComponentsRef.current = result;
         return result;
     }, [filters, ownedGames]);
@@ -52,28 +52,28 @@ export default function Body() {
         setSelectedGame(null);
         setCurrentIndex(0);
         shownEventsRef.current = {};
+
         if (filteredList != null) {
             const filteredGameComponents = createGameComponents(filteredList);
             setFilteredComponents(filteredGameComponents);
         } else {
             setFilteredComponents(null);
         }
-    }, [createGameComponents, filteredList]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filteredList]);
 
     useEffect(() => {
-        currentGameComponentsRef.current = [];
-        setSelectedGame(null);
-        setCurrentIndex(0);
-        shownEventsRef.current = {};
-        const gameComponents = createGameComponents(gameUpdates);
-        setGameComponents(gameComponents);
-    }, [createGameComponents, gameUpdates]);
+        if (gameComponents.length === 0) {
+            const gameComponents = createGameComponents(gameUpdates);
+            setGameComponents(gameComponents);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ownedGames]);
 
     useEffect(() => {
         if (currentIndex === 0) {
             return;
         }
-
         if (filteredComponents != null) {
             const filteredGameComponents = createGameComponents(filteredList);
             setFilteredComponents(filteredGameComponents, currentIndex);
@@ -82,7 +82,7 @@ export default function Body() {
             setGameComponents(gameComponents);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [createGameComponents, currentIndex]);
+    }, [currentIndex]);
 
     useEffect(() => {
         // handle the case where a user refreshes their updates.

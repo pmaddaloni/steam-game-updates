@@ -4,7 +4,7 @@ import removeAccents from 'remove-accents';
 import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
-const WEB_SOCKET_PATH = true || window.location.host.includes('steamgameupdates.info') ?
+const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
     'wss://api.steamgameupdates.info/ws' : 'ws://' + (process.env.REACT_APP_WEBSOCKET || 'localhost:8081');
 
 export const AuthContext = createContext();
@@ -46,7 +46,7 @@ const reducer = (state, { type, value }) => {
             return { ...state, ownedGames: newOwnedGames };
         case 'updateOwnedGames':
             // localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(value));
-            return { ...state, ownedGames: { ...value } };
+            return { ...state, ownedGames: { ...state.ownedGames, ...value } };
         case 'updateGameUpdates':
             return { ...state, gameUpdates: value };
         case 'updateSearch':
@@ -142,9 +142,10 @@ export const AuthProvider = function ({ children }) {
                 const { loadingProgress, ownedGamesWithUpdates, gameUpdatesIDs } = event.data;
                 if (loadingProgress != null) {
                     dispatch({ type: 'updateLoadingProgress', value: loadingProgress });
+                } else if (gameUpdatesIDs != null) {
+                    dispatch({ type: 'updateGameUpdates', value: gameUpdatesIDs });
                 } else {
                     dispatch({ type: 'updateOwnedGames', value: ownedGamesWithUpdates });
-                    dispatch({ type: 'updateGameUpdates', value: gameUpdatesIDs });
                 }
             };
             // Clean up the worker when the component unmounts
@@ -232,13 +233,17 @@ export const AuthProvider = function ({ children }) {
     useEffect(() => {
         if (state.id && Object.keys(state.ownedGames).length === 0) {
             (async () => {
+                dispatch({ type: 'updateLoadingProgress', value: 0 });
                 // First grab all of a user's owned games
                 try {
                     const ownedGames = await getAllUserOwnedGames();
-
-                    // Then send the owned games to the worker to get their names
+                    // total is one request for getting owned games, one for posting their keys to server
+                    // and # of ownedGames divided by chunk size
+                    const totaleNumberOfRequests = Math.ceil(Object.keys(ownedGames).length / 150) + 2;
+                    // Then send the owned games to the worker to get their events
                     if (ownedGames) {
-                        gameDetailsWorker.postMessage(ownedGames);
+                        dispatch({ type: 'updateLoadingProgress', value: (1 / totaleNumberOfRequests) * 100 });
+                        gameDetailsWorker.postMessage({ ownedGames, totaleNumberOfRequests });
                     }
                 } catch (err) {
                     console.error('Getting owned games failed.', err);

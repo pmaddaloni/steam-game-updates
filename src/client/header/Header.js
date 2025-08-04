@@ -112,11 +112,14 @@ export default function Header() {
     const dispatchFilterChanges = type => dispatch({ type: 'updateFilters', value: type });
 
     useEffect(() => {
-        setInteractionDisabled(gameUpdates.length === 0);
-    }, [gameUpdates])
+        setInteractionDisabled(loadingProgress < 100);
+    }, [loadingProgress])
 
     useEffect(() => {
         function handleKeyDown(event) {
+            if (interactionDisabled) {
+                return;
+            }
             const searchBar = document.getElementById('search-bar');
             if (event.key === 'r' && document.activeElement !== searchBar) {
                 const refreshButton = document.getElementById('refresh-button');
@@ -136,7 +139,7 @@ export default function Header() {
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [dispatch, userID]);
+    }, [dispatch, interactionDisabled, userID]);
 
     const login = async () => {
         const newWindow = window.open(loginLocation, 'Steam Sign-in',

@@ -749,9 +749,20 @@ app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
     // }
 });
 
+const tempMap = {};
+// create a temp map entry with the UUID from POST
+// lookup all entries and then store in map
+// create a GET endpoint that returns paginated results
+// once the end is reached, delete the temp map entry
+
 app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID, 10));
-    const updates = []; // An array of {appid: gameID, events: []} in order of most recently updated
+    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    const requestID = req.body.request_id;
+    if (requestID == null) {
+        res.sendStatus(406);
+        return;
+    }
+    const updates = {}; // {appid: gameID, events: []}
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
         // (The gameID is the second element in the array)
@@ -760,18 +771,60 @@ app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, r
             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
             app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
         }
-        updates.push(
-            {
-                appid: gameID,
-                events: app.locals.allSteamGamesUpdates[gameID],
-            }
-        );
+        if (events != null) {
+            updates[gameID] = events;
+        }
     }
-    res.send({ updates });
+    let gameUpdatesIDs = [];
+    // Sort the updates for each game by posttime, descending
+    for (const [appid, events] of Object.entries(updates)) {
+        gameUpdatesIDs = gameUpdatesIDs.concat(
+            events.map(({ posttime }) => [posttime, appid]));
+    }
+    gameUpdatesIDs = gameUpdatesIDs.sort((a, b) => b[0] - a[0]);
+    tempMap[requestID] = { updates, gameUpdatesIDs }
+    res.send({ gameUpdatesIDs });
+});
+
+app.get('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
+    const requestID = req.query.request_id;
+    const requestSize = parseInt(req.query.fetch_size ?? '150');
+    let updatesChunk = {};
+
+    try {
+        let appsFound = 0;
+        while (appsFound < requestSize
+            && Object.keys(tempMap[requestID].updates).length > 0) {
+            // find the next requestSize (e.g. 150) # of unsent games to return to client
+            for (const [index, [, appid]] of tempMap[requestID].gameUpdatesIDs.entries()) {
+                if (tempMap[requestID].updates[appid] != null
+                    && updatesChunk[appid] == null) {
+                    updatesChunk[appid] = tempMap[requestID].updates[appid];
+                    delete tempMap[requestID].updates[appid];
+                    appsFound++;
+                    break;
+                }
+                // If the entire updates array didn't have any remaining games in it,
+                // then those remaining games have no updates to report, so we're done.
+                if (index === tempMap[requestID].gameUpdatesIDs.length - 1) {
+                    appsFound = Infinity;
+                }
+            }
+        }
+        let hasMore = true;
+        if (Object.keys(tempMap[requestID].updates).length === 0
+            || appsFound === Infinity) {
+            delete tempMap[requestID];
+            hasMore = false;
+        }
+        res.send({ updates: updatesChunk, hasMore })
+    } catch {
+        res.sendStatus(404);
+    }
 });
 
 app.post('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID, 10));
+    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
     const lastCheckTime = parseInt(req.query.last_check_time)   // this is ms
     const gameIDsWithUpdates = [];
     // Iterate through all passed in games and add them if found

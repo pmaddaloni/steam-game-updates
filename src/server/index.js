@@ -336,8 +336,9 @@ const ensureAuthenticated = function (req, res, next) {
 async function getGameIDUpdates(
     gameID,
     prioritizedRequest = false,
-    include_count_before = true,
-    include_count_after = true) {
+    includeCountBefore = true,
+    includeCountAfter = true
+) {
     let result = null;
     if (gameID == null) {
         return {
@@ -351,8 +352,8 @@ async function getGameIDUpdates(
                 makeRequest(
                     'https://store.steampowered.com/events/ajaxgetadjacentpartnerevents' +
                         `?appid=${gameID}` +
-                        include_count_before ? '&count_before=0' : '' +
-                            include_count_after ? '&count_after=0' : ''),
+                        includeCountBefore ? '&count_before=0' : '' +
+                            includeCountAfter ? '&count_after=0' : ''),
                 { priority: prioritizedRequest ? 2 : 0 }
             );
         result = response.data;
@@ -376,7 +377,12 @@ async function getGameIDUpdates(
                 retryAfter: resultRetryAfter
             }
         } else if (err.response?.data.eresult === 42 &&
-            (include_count_before || include_count_after)) {
+            (includeCountBefore || includeCountAfter)) {
+            const shouldIncludeCountBefore = (!includeCountBefore || includeCountAfter) &&
+                !(includeCountBefore && includeCountAfter);
+            const shouldIncludeCountAfter = includeCountBefore && includeCountAfter;
+            console.log(`Retrying ${gameID} request with shouldIncludeCountBefore:` +
+                `${shouldIncludeCountBefore}, shouldIncludeCountAfter: ${shouldIncludeCountAfter}`)
             // retry in this order, after using both params failed:
             // 1. Try with count_before as false, but count_after is true.
             // 2. If #1 fails, then try with count_before being true, and count_after as false.
@@ -385,9 +391,8 @@ async function getGameIDUpdates(
             getGameIDUpdates(
                 gameID,
                 prioritizedRequest,
-                (!include_count_before || include_count_after) &&
-                !(include_count_before && include_count_after),
-                include_count_before && include_count_after
+                shouldIncludeCountBefore,
+                shouldIncludeCountAfter
             )
         } else {
             // Something went wrong other than rate limiting
@@ -399,6 +404,7 @@ async function getGameIDUpdates(
     }
     return result;
 }
+
 console.log(`Server last refreshed on ${new Date(app.locals.lastServerRefreshTime)} with ${app.locals.dailyLimit} requests left`);
 console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates).length} games with their updates.`);
 

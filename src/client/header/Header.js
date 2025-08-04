@@ -105,7 +105,7 @@ const reducer = (state, filterToUpdate) => {
 }
 
 export default function Header() {
-    const { id: userID, displayName, photos, dispatch, gameUpdates, loadingProgress } = useAuth();
+    const { id: userID, displayName, photos, dispatch, loadingProgress } = useAuth();
     const [interactionDisabled, setInteractionDisabled] = useState(true);
     const [isPopoverOpen, setIsOpen] = useState(false);
     const [filters, filtersDispatch] = useReducer(reducer, defaultFilters)

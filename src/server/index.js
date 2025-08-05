@@ -482,7 +482,6 @@ const getGameUpdates = async (externalGameID) => {
 
         let gameID = externalGameID ?? priorityGameID
             ?? app.locals.gameIDsToCheck[app.locals.gameIDsToCheckIndex];
-
         if (gameID == null) {
             app.locals.gameIDsToCheckIndex = 0; // Loop back to the beginning
             gameID = app.locals.gameIDsToCheck[0];

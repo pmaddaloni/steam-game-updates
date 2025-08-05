@@ -351,9 +351,9 @@ async function getGameIDUpdates(
             await app.locals.requestQueue.add(
                 makeRequest(
                     'https://store.steampowered.com/events/ajaxgetadjacentpartnerevents' +
-                        `?appid=${gameID}` +
-                        includeCountBefore ? '&count_before=0' : '' +
-                            includeCountAfter ? '&count_after=0' : ''),
+                    `?appid=${gameID}` +
+                    (includeCountBefore ? '&count_before=0' : '') +
+                    (includeCountAfter ? '&count_after=100' : '')),
                 { priority: prioritizedRequest ? 2 : 0 }
             );
         result = response.data;

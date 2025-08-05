@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { fork, spawn } from 'child_process';
+import { execSync, fork, spawn } from 'child_process';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
@@ -24,7 +24,19 @@ const environment = config.ENVIRONMENT || 'development'; // Default to 'developm
 const __filename = fileURLToPath(import.meta.url);  // get the resolved path to the file
 const __dirname = path.dirname(__filename);         // get the name of the directory
 
-console.clear();
+if (environment !== 'development') {
+    try {
+        console.log('Running cleanup script before starting server...');
+        execSync('bash ./cleanup.sh', { stdio: 'inherit' });
+        console.log('Cleanup complete.');
+    } catch (error) {
+        console.error('Cleanup script failed:', error);
+        // Decide if you want to exit or continue here
+        // process.exit(1);
+    }
+} else {
+    console.clear();
+}
 
 // Spin up SteamWebPipes server
 const MEMORY_LIMIT_MB = 100;
@@ -838,6 +850,7 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
                 }
             }
         }
+
         let hasMore = true;
         if (Object.keys(tempMap[requestID].updates).length === 0
             || appsFound === Infinity) {

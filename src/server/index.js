@@ -388,7 +388,7 @@ async function getGameIDUpdates(
             // 2. If #1 fails, then try with count_before being true, and count_after as false.
             // 3. If #2 fails try both as false.
             // 4. If that fails then give up.
-            getGameIDUpdates(
+            return getGameIDUpdates(
                 gameID,
                 prioritizedRequest,
                 shouldIncludeCountBefore,

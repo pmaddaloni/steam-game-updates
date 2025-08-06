@@ -370,7 +370,7 @@ async function getGameIDUpdates(
             );
         result = response.data;
     } catch (err) {
-        console.error(`Getting the game ${gameID}'s updates failed.`, err.message, '\n', err.response?.data);
+        console.error(`Getting the game ${gameID}'s updates failed.`, err.message, '\n', err.response?.status, '\n', err.response?.data,);
         let resultRetryAfter = err.response?.headers?.['retry-after'];
         if (resultRetryAfter) {
             resultRetryAfter = parseInt(resultRetryAfter, 10);

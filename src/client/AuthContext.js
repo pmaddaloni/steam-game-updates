@@ -21,6 +21,15 @@ const FILTER_MAPPING = {
     crossPosts: 34
 }
 
+export const FILTER_REVERSE_MAPPING = {
+    14: 'major',
+    13: 'major',
+    12: 'minor',
+    2: 'gameEvents',
+    28: 'newsEvents',
+    34: 'crossPosts'
+}
+
 const defaultState = {
     displayName: '',
     id: '',
@@ -32,6 +41,7 @@ const defaultState = {
     filteredList: null,
     loadingProgress: null,
     filters: [],
+    menuFilters: [],
 };
 
 const reducer = (state, { type, value }) => {
@@ -63,32 +73,36 @@ const reducer = (state, { type, value }) => {
                     }
                     return acc;
                 }, []);
-            const filteredList = matchedGames?.sort((a, b) => b[0] - a[0]);
+            const filteredList = matchedGames && matchedGames.sort((a, b) => b[0] - a[0]);
             return { ...state, filteredList }
         case 'updateLoadingProgress':
             return { ...state, loadingProgress: value };
         case 'updateFilters':
             // filter out all of these event types
+            let filters;
             if (value === 'none') {
-                return { ...state, filters: Object.values(FILTER_MAPPING).flat() }
+                filters = Object.values(FILTER_MAPPING).flat()
             } else if (value !== 'all') {
                 const incomingFilters = [].concat(FILTER_MAPPING[value]);
-                const currentFilters = state.filters.reduce((acc, filter) => {
-                    return { ...acc, [filter]: true }
-                }, {});
-                incomingFilters.forEach(filter => {
-                    if (currentFilters[filter]) {
-                        delete currentFilters[filter];
+                filters = [...state.filters];
+                for (const filter of incomingFilters) {
+                    if (state.filters.includes(filter)) {
+                        filters = filters.filter(f => f !== filter);
                     } else {
-                        currentFilters[filter] = true;
+                        filters.push(filter)
                     }
-                });
-                const filters = Object.keys(currentFilters).map(key => parseInt(key));
-                localStorage.setItem('steam-game-updates-filters', JSON.stringify(filters))
-                return { ...state, filters };
+                }
             } else {
-                return { ...state, filters: [] }
+                filters = [];
             }
+            localStorage.setItem('steam-game-updates-filters', JSON.stringify(filters));
+            return { ...state, filters }
+        case 'setFilters':
+            const filterSet = new Set();
+            value.forEach(f => {
+                filterSet.add(FILTER_REVERSE_MAPPING[f]);
+            })
+            return { ...state, filters: value, menuFilters: [...filterSet] }
         default: return state;
     };
 };
@@ -101,14 +115,16 @@ export const AuthProvider = function ({ children }) {
 
     useEffect(() => {
         // Populate the context with what's already been stored in local storage.
-        let filters = localStorage.getItem('steam-game-updates-filters');
-        dispatch({ type: 'updateFilters', value: JSON.parse(filters) })
-
-        function checkLocalStorageIfLoggedIn() {
-            let user = localStorage.getItem('steam-game-updates-user');
+        async function checkLocalStorageIfLoggedIn() {
+            let user = await localStorage.getItem('steam-game-updates-user');
             if (user != null) {
                 user = JSON.parse(user);
                 dispatch({ type: 'login', value: user });
+                let storedGameUpdatesFilters = await localStorage.getItem('steam-game-updates-filters');
+                if (storedGameUpdatesFilters != null) {
+                    const parsedGameUpdatesFilters = JSON.parse(storedGameUpdatesFilters);
+                    dispatch({ type: 'setFilters', value: parsedGameUpdatesFilters });
+                }
             } else {
                 dispatch({ type: 'logout' })
             }
@@ -116,7 +132,7 @@ export const AuthProvider = function ({ children }) {
         };
         (async () => {
             try {
-                const isLoggedInLocally = checkLocalStorageIfLoggedIn();
+                const isLoggedInLocally = await checkLocalStorageIfLoggedIn();
                 if (isLoggedInLocally) {
                     // checking if user has a valid session on the server
                     const result = await axios.get('/api/user');

@@ -105,11 +105,14 @@ const reducer = (state, filterToUpdate) => {
 }
 
 export default function Header() {
-    const { id: userID, displayName, photos, dispatch, loadingProgress } = useAuth();
+    const { id: userID, displayName, photos, dispatch, menuFilters, loadingProgress } = useAuth();
     const [interactionDisabled, setInteractionDisabled] = useState(true);
     const [isPopoverOpen, setIsOpen] = useState(false);
     const [filters, filtersDispatch] = useReducer(reducer, defaultFilters)
     const dispatchFilterChanges = type => dispatch({ type: 'updateFilters', value: type });
+    useEffect(() => {
+        (menuFilters).forEach(f => filtersDispatch(f))
+    }, [menuFilters])
 
     useEffect(() => {
         setInteractionDisabled(loadingProgress < 100);
@@ -395,7 +398,7 @@ export default function Header() {
                             </ul>
                         )}
                     >
-                        <div className={classNames(interactionDisabled ? styles['menu-disabled'] : null, isPopoverOpen ? styles.active : null, styles.menu)} onClick={() => shouldShowPopup(!isPopoverOpen)}>
+                        <div className={classNames(interactionDisabled ? null : null, isPopoverOpen ? styles.active : null, styles.menu)} onClick={() => shouldShowPopup(!isPopoverOpen)}>
                             <img src={photos[0]?.value} alt='user-avatar' />
                             <div className={styles.user} >{displayName}</div>
                             <div className={styles['menu-caret']}>&#x2304;</div>

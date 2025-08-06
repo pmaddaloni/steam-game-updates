@@ -13,45 +13,58 @@ export default function Body() {
     const [selectedGame, setSelectedGame] = useState(null);
     const [filteredComponents, setFilteredComponents] = useState(null);
     const [gameComponents, setGameComponents] = useState([]);
+    const currentListIndexRef = useRef(0);
     const currentGameComponentsRef = useRef([]);
-    const shownEventsRef = useRef({}); // {[appid]: # of times it's in the list}
     const timeoutId = useRef(null);
 
-    const createGameComponents = useCallback((gamesList, index = 0) => {
-        const shownEvents = shownEventsRef.current;
-        let componentIndex = currentGameComponentsRef.current.length;
-        const gamesArray = gamesList.slice(index, index + itemsPerPage);
-        const newList = gamesArray.reduce((acc, [, appid]) => {
+    const createGameComponents = useCallback((gamesList, showMore = false) => {
+        let componentIndex = showMore ? currentGameComponentsRef.current.length : 0;
+        let currentIndex = showMore ? currentListIndexRef.current : 0;
+        const gamesArray1 = gamesList.slice(currentIndex);
+        const newList1 = [];
+        for (const [posttime, appid] of gamesArray1) {
             const { events, name } = ownedGames[appid] ?? {};
-            if (events != null && events.length > 0) {
-                shownEvents[appid] = (shownEvents[appid] ?? -1) + 1
-                const update = events[shownEvents[appid]];
-                if (update != null && !filters.includes(update.event_type)) {
-                    acc.push(
-                        <GameUpdateListComponent
-                            eventIndex={shownEvents[appid]}
-                            key={appid + '-' + update?.posttime}
-                            appid={appid}
-                            name={name}
-                            update={update}
-                            setSelectedGame={setSelectedGame}
-                            index={componentIndex++}
-                        />
-                    )
-                }
+            currentIndex++;
+            const update = events.find(({ posttime: eventPosttime }) => posttime === eventPosttime);
+            if (filters.includes(update.event_type)) {
+                continue;
             }
-            return acc;
-        }, []);
-        const result = currentGameComponentsRef.current.concat(newList);
+            newList1.push(<GameUpdateListComponent
+                key={appid + '-' + update.posttime}
+                appid={appid}
+                name={name}
+                update={update}
+                setSelectedGame={setSelectedGame}
+                index={componentIndex++}
+            />);
+            if (newList1.length === itemsPerPage) {
+                break;
+            }
+        }
+        currentListIndexRef.current = currentIndex;
+        const result = showMore ? currentGameComponentsRef.current.concat(newList1) : newList1;
         currentGameComponentsRef.current = result;
         return result;
     }, [filters, ownedGames]);
 
     useEffect(() => {
+        setSelectedGame(null);
+        setCurrentIndex(0);
+        currentGameComponentsRef.current = [];
+        if (filteredComponents != null) {
+            const filteredGameComponents = createGameComponents(filteredList);
+            setFilteredComponents(filteredGameComponents);
+        } else {
+            const gameComponents = createGameComponents(gameUpdates);
+            setGameComponents(gameComponents);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters]);
+
+    useEffect(() => {
         currentGameComponentsRef.current = [];
         setSelectedGame(null);
         setCurrentIndex(0);
-        shownEventsRef.current = {};
 
         if (filteredList != null) {
             const filteredGameComponents = createGameComponents(filteredList);
@@ -77,10 +90,10 @@ export default function Body() {
             return;
         }
         if (filteredComponents != null) {
-            const filteredGameComponents = createGameComponents(filteredList, currentIndex);
+            const filteredGameComponents = createGameComponents(filteredList, true, currentIndex);
             setFilteredComponents(filteredGameComponents);
         } else {
-            const gameComponents = createGameComponents(gameUpdates, currentIndex);
+            const gameComponents = createGameComponents(gameUpdates, true, currentIndex);
             setGameComponents(gameComponents);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,7 +105,7 @@ export default function Body() {
             currentGameComponentsRef.current = [];
             setSelectedGame(null);
             setCurrentIndex(0);
-            shownEventsRef.current = {};
+            // shownEventsRef.current = {};
             setGameComponents([]);
         }
     }, [gameUpdates]);

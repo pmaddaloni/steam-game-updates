@@ -398,7 +398,7 @@ export default function Header() {
                             </ul>
                         )}
                     >
-                        <div className={classNames(interactionDisabled ? null : null, isPopoverOpen ? styles.active : null, styles.menu)} onClick={() => shouldShowPopup(!isPopoverOpen)}>
+                        <div className={classNames(interactionDisabled ? styles['menu-disabled'] : null, isPopoverOpen ? styles.active : null, styles.menu)} onClick={() => shouldShowPopup(!isPopoverOpen)}>
                             <img src={photos[0]?.value} alt='user-avatar' />
                             <div className={styles.user} >{displayName}</div>
                             <div className={styles['menu-caret']}>&#x2304;</div>

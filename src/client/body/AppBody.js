@@ -18,9 +18,9 @@ export default function Body() {
     const createGameComponents = useCallback((gamesList, showMore = false) => {
         let componentIndex = showMore ? currentGameComponentsRef.current.length : 0;
         let currentIndex = showMore ? currentListIndexRef.current : 0;
-        const gamesArray1 = gamesList.slice(currentIndex);
+        const gamesArray = gamesList.slice(currentIndex);
         const newList = [];
-        for (const [posttime, appid] of gamesArray1) {
+        for (const [posttime, appid] of gamesArray) {
             const { events, name } = ownedGames[appid] ?? {};
             currentIndex++;
             const updateIndex = events.findIndex(({ posttime: eventPosttime }) => posttime === eventPosttime);
@@ -183,7 +183,7 @@ export default function Body() {
                                 : loadingProgress === 100 && filteredList != null ?
                                     <>No search results - try something else...</>
                                     :
-                                    <>Gathering patch notes for your owned games - hang tight...</>
+                                    <>Gathering updates for your owned games - hang tight...</>
                         }
                     </p>
                 </div> :

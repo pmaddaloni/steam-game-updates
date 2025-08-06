@@ -110,6 +110,7 @@ export default function Header() {
     const [isPopoverOpen, setIsOpen] = useState(false);
     const [filters, filtersDispatch] = useReducer(reducer, defaultFilters)
     const dispatchFilterChanges = type => dispatch({ type: 'updateFilters', value: type });
+
     useEffect(() => {
         (menuFilters).forEach(f => filtersDispatch(f))
     }, [menuFilters])

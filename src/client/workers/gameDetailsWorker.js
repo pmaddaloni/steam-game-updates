@@ -10,7 +10,7 @@ axios.defaults.baseURL = self.location.host.includes('steamgameupdates.info') ?
 // https://create-react-app.dev/docs/adding-custom-environment-variables/#adding-development-environment-variables-in-env
 axios.defaults.withCredentials = true;
 
-onmessage = async ({ data: { ownedGames, totaleNumberOfRequests } }) => {
+onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize } }) => {
     let ownedGamesWithoutUpdates = { ...ownedGames };
     let numberOfRequestsSoFar = 1;
     // Remove games that didn't get a name.
@@ -20,7 +20,7 @@ onmessage = async ({ data: { ownedGames, totaleNumberOfRequests } }) => {
         postMessage({ ownedGamesWithUpdates: [], gameUpdatesIDs: [] });
         return;
     }
-    const requestSize = 150; // Break up a person's library request into chunks so as not to overwhelm the API
+
     const requestID = uuidv4();
     try {
         // generate a UUID
@@ -32,27 +32,22 @@ onmessage = async ({ data: { ownedGames, totaleNumberOfRequests } }) => {
         let result = await axios.post('/api/beta/game-updates-for-owned-games', { appids: gameIDs, request_id: requestID });
         const { gameUpdatesIDs } = result.data;
         postMessage({ gameUpdatesIDs });
-        postMessage({ loadingProgress: (++numberOfRequestsSoFar / totaleNumberOfRequests) * 100 });
+        postMessage({ loadingProgress: (++numberOfRequestsSoFar / totalNumberOfRequests) * 100 });
         do {
             const ownedGamesWithUpdates = {};
             const result = await axios.get('/api/beta/game-updates-for-owned-games',
-                { params: { request_id: requestID, requestSize } });
+                { params: { request_id: requestID, fetch_size: requestSize } });
             const { updates, hasMore } = result.data;
             for (const [appid, events] of Object.entries(updates)) {
                 ownedGamesWithUpdates[appid] = { ...ownedGamesWithoutUpdates[appid] };
                 ownedGamesWithUpdates[appid].events = events;
             }
-
-            // for (const { appid, events } of updates) {
-            //     ownedGames[appid].events = events;
-            // }
-            // postMessage({ loadingProgress: (1 - (gameIDs.length / Object.keys(ownedGames).length)) * 100 });
-            postMessage({ loadingProgress: (++numberOfRequestsSoFar / totaleNumberOfRequests) * 100 });
+            postMessage({ loadingProgress: (++numberOfRequestsSoFar / totalNumberOfRequests) * 100 });
             postMessage({ ownedGamesWithUpdates });
             if (hasMore === false) {
                 break;
             }
-        } while (true)
+        } while (numberOfRequestsSoFar !== totalNumberOfRequests)
         postMessage({ loadingProgress: 100 });
     } catch (err) {
         console.error('Retrieving all game updates failed.', err);

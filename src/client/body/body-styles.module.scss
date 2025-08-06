@@ -360,7 +360,7 @@ $padding: 20px;
             border-color: white;
         }
 
-        & div {
+        & div.patch-date {
             padding: 0px 10px 0px 0px;
         }
 
@@ -368,14 +368,13 @@ $padding: 20px;
             width: 150px;
             margin-top: auto;
             margin-bottom: auto;
-            text-align: center;
         }
 
         .patch-title {
             width: 250px;
             margin-top: auto;
             margin-bottom: auto;
-            text-align: center;
+            margin-left: 5px;
         }
 
         .game-title {

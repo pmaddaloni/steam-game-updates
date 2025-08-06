@@ -10,6 +10,9 @@ const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
+// Break up a person's library request into chunks so as not to overwhelm the API.
+const REQUEST_SIZE = 150;
+
 const FILTER_MAPPING = {
     major: [13, 14],
     minor: 12,
@@ -239,11 +242,11 @@ export const AuthProvider = function ({ children }) {
                     const ownedGames = await getAllUserOwnedGames();
                     // total is one request for getting owned games, one for posting their keys to server
                     // and # of ownedGames divided by chunk size
-                    const totaleNumberOfRequests = Math.ceil(Object.keys(ownedGames).length / 150) + 2;
+                    const totalNumberOfRequests = Math.ceil(Object.keys(ownedGames).length / REQUEST_SIZE) + 2;
                     // Then send the owned games to the worker to get their events
                     if (ownedGames) {
-                        dispatch({ type: 'updateLoadingProgress', value: (1 / totaleNumberOfRequests) * 100 });
-                        gameDetailsWorker.postMessage({ ownedGames, totaleNumberOfRequests });
+                        dispatch({ type: 'updateLoadingProgress', value: (1 / totalNumberOfRequests) * 100 });
+                        gameDetailsWorker.postMessage({ ownedGames, totalNumberOfRequests, requestSize: REQUEST_SIZE });
                     }
                 } catch (err) {
                     console.error('Getting owned games failed.', err);

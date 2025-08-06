@@ -42,7 +42,7 @@ export default function Body() {
             }
             return acc;
         }, []);
-        const result = index !== 0 ? currentGameComponentsRef.current.concat(newList) : newList;
+        const result = currentGameComponentsRef.current.concat(newList);
         currentGameComponentsRef.current = result;
         return result;
     }, [filters, ownedGames]);
@@ -58,6 +58,8 @@ export default function Body() {
             setFilteredComponents(filteredGameComponents);
         } else {
             setFilteredComponents(null);
+            const gameComponents = createGameComponents(gameUpdates);
+            setGameComponents(gameComponents);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filteredList]);
@@ -75,8 +77,8 @@ export default function Body() {
             return;
         }
         if (filteredComponents != null) {
-            const filteredGameComponents = createGameComponents(filteredList);
-            setFilteredComponents(filteredGameComponents, currentIndex);
+            const filteredGameComponents = createGameComponents(filteredList, currentIndex);
+            setFilteredComponents(filteredGameComponents);
         } else {
             const gameComponents = createGameComponents(gameUpdates, currentIndex);
             setGameComponents(gameComponents);
@@ -87,7 +89,11 @@ export default function Body() {
     useEffect(() => {
         // handle the case where a user refreshes their updates.
         if (gameUpdates.length === 0) {
+            currentGameComponentsRef.current = [];
             setSelectedGame(null);
+            setCurrentIndex(0);
+            shownEventsRef.current = {};
+            setGameComponents([]);
         }
     }, [gameUpdates]);
 

@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
 import removeAccents from 'remove-accents';
-import { notifyUser, webSocketConnectWithRetry } from '../utilities/utils.js';
+import { createWebSocketConnector, notifyUser } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
 const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
@@ -192,10 +192,10 @@ export const AuthProvider = function ({ children }) {
     useEffect(() => {
         if (state.id !== '') {
             if (steamGameUpdatesSocket == null) {
-                // UPDATE THIS FROM DEVVVV
-                steamGameUpdatesSocket = webSocketConnectWithRetry({ url: WEB_SOCKET_PATH, isDev: process.env.NODE_ENV === 'development' });
+                steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH);
+                steamGameUpdatesSocket.start();
             }
-            steamGameUpdatesSocket.onmessage = (event) => {
+            const onMessage = (event) => {
                 // One of two types of messages is being received here:
                 // 1. A map of apps that updated which was retrieved from Valve's PICS service
                 // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
@@ -222,8 +222,8 @@ export const AuthProvider = function ({ children }) {
                     dispatch({ type: 'updateGameUpdates', value: [[mostRecentUpdateTime, appid]] });
                 } */
             }
+            steamGameUpdatesSocket.updateOnMessage(onMessage);
         }
-
     }, [state.id, state.ownedGames]);
 
     const getAllUserOwnedGames = useCallback(async (userID = state.id) => {

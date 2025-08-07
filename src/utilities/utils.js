@@ -1,53 +1,100 @@
 import axios from 'axios';
-import ServerWebSocket from 'ws';
 
-const MAX_RETRIES = 1000;
-export function webSocketConnectWithRetry({ url, retryInterval = 3000, socketType = 'frontend', isDev = false }) {
+/**
+ * A robust WebSocket connection manager with an exponential backoff retry mechanism.
+ * It centralizes all connection, reconnection, and error handling logic.
+ *
+ * @param {string} url The URL of the WebSocket server.
+ * @param {object} options Configuration options.
+ * @param {number} [options.retryInterval=1000] The initial delay in milliseconds before the first retry.
+ * @param {number} [options.maxRetries=10] The maximum number of retry attempts.
+ * @param {function} [options.onOpen] A callback function for when the connection is successfully opened.
+ * @param {function} [options.onClose] A callback function for when the connection is closed.
+ * @param {function} [options.onMessage] A callback function for when a message is received.
+ * @param {function} [options.onError] A callback function for when a critical error occurs.
+ * @returns {object} An object with methods to start and stop the connection.
+ */
+export function createWebSocketConnector(
+    url, { retryInterval = 1000, maxRetries = 10, onOpen, onClose, onMessage: externalOnMessage, onError } = {}
+) {
     let ws;
     let retries = 0;
-    let errorShown = false
-    let interval = null;
+    let isConnecting = false;
+    let isClosed = false;
+    let timeoutId = null;
+    let onMessage = externalOnMessage;
+    const showConsoleMsgs = process.env.NODE_ENV === 'development';
 
-    function attemptConnect() {
-        if (interval != null) {
-            retries++;
-        }
-        if (retries >= MAX_RETRIES) {
-            clearInterval(interval);
-            interval = null;
+    // The main function to establish the connection
+    function connect() {
+        if (isConnecting || isClosed) {
+            showConsoleMsgs && console.log('Connection in progress or already closed, skipping...');
             return;
         }
-        isDev && console.log(`Attempting to connect to WebSocket at ${url} (attempt ${retries + 1})`);
-        ws = socketType === 'frontend' ? new WebSocket(url) : new ServerWebSocket(url);
 
+        isConnecting = true;
+        ws = new WebSocket(url);
+        showConsoleMsgs && console.log("Attempting to connect to WebSocket at " + url);
+
+        // --- Event Handlers ---
         ws.onopen = () => {
-            isDev && console.log("WebSocket connected at " + url);
-            clearInterval(interval);
-            retries = 0;
-            errorShown = false;
+            showConsoleMsgs && console.log("WebSocket connected successfully.");
+            isConnecting = false;
+            retries = 0; // Reset retries on success
+            if (onOpen) onOpen(ws);
+        };
+
+        ws.onmessage = (event) => {
+            if (onMessage) onMessage(event);
         };
 
         ws.onclose = (event) => {
-            isDev && console.log(`WebSocket at ${ws.url} closed, reason: ${event.reason}, code: ${event.code}`);
-            if (event.code !== 1000 && interval == null) { // Don't retry if closed normally
-                interval = setInterval(attemptConnect, retryInterval);
+            showConsoleMsgs && console.log(`WebSocket at ${url} closed. Reason: ${event.reason}, Code: ${event.code}`);
+            isConnecting = false;
+            if (onClose) onClose(event);
+
+            // Only attempt to reconnect if the close was not normal (code 1000)
+            if (event.code !== 1000 && !isClosed) {
+                if (retries < maxRetries) {
+                    retries++;
+                    const delay = retryInterval * Math.pow(2, retries - 1); // Exponential backoff
+                    showConsoleMsgs && console.log(`Connection failed. Retrying in ${delay / 1000} seconds. Attempt ${retries}/${maxRetries}...`);
+                    timeoutId = setTimeout(connect, delay);
+                } else {
+                    showConsoleMsgs && console.error("Max retry attempts reached. Connection failed permanently.");
+                    window.alert("There was an error with the connection to the Steam Game Updates server. Please try refreshing the page.");
+                    // This is where you would show the alert to the user
+                    if (onError) onError("Max retries reached. Please check your connection.");
+                }
             }
         };
 
         ws.onerror = (error) => {
-            console.error("Error establishing connection with server - try refreshing.", error);
-            ws.close();
-            if (!errorShown && retries > 10 && window) {
-                errorShown = true;
-                window.alert("There was an error on the server. Please try refreshing the page.");
-            }
-            if (interval == null) {
-                interval = setInterval(attemptConnect, retryInterval);
-            }
+            // Error events are typically followed by a 'close' event, so we just log and let 'onclose' handle the retry
+            showConsoleMsgs && console.error("WebSocket connection error:", error);
         };
     }
-    attemptConnect();
-    return ws;
+
+    // Public API to manage the connection
+    return {
+        start: () => {
+            if (!ws || ws.readyState === WebSocket.CLOSED) {
+                isClosed = false;
+                connect();
+            }
+        },
+        stop: () => {
+            if (ws) {
+                isClosed = true;
+                // Clear any pending retry timeouts
+                clearTimeout(timeoutId);
+                // Close the connection with a normal closure code
+                ws.close(1000, "User requested close.");
+            }
+        },
+        updateOnMessage: newOnMessage => onMessage = newOnMessage,
+        getSocket: () => ws
+    };
 }
 
 /**

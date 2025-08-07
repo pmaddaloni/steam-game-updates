@@ -5,7 +5,7 @@ import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
 import fs from 'fs';
-import { createServer } from 'https';
+import { createServer } from 'http';
 import PQueue from 'p-queue';
 import passport from 'passport';
 import SteamStrategy from 'passport-steam';
@@ -1002,13 +1002,13 @@ httpServer.on('upgrade', (request, socket, head) => {
     sessionMiddleware(request, {}, () => {
         // Check if the user is authenticated via Passport.js
         // The passport user object is stored in the session.
-        if (request.session.passport && request.session.passport.user
+        if ((request.session.passport && request.session.passport.user)
             || app.locals.mobileSessions.has(request.headers['session-id'])
         ) {
             // User is authenticated, proceed with the WebSocket connection.
             // We attach the user to the request object for easy access in the
             // 'connection' event handler.
-            request.user = request.session.passport.user;
+            const user = request.session.passport.user;
             console.log(`\n\nSteam user ${user.displayName} (ID: ${user.id}) connected to WebSocket.`);
 
             wss.handleUpgrade(request, socket, head, (ws) => {

@@ -5,7 +5,7 @@ import { createWebSocketConnector, notifyUser } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
 const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
-    'wss://api.steamgameupdates.info/ws' : 'ws://' + (process.env.REACT_APP_WEBSOCKET || 'localhost:8081');
+    'wss://api.steamgameupdates.info' : 'ws://' + (process.env.REACT_APP_WEBSOCKET || 'localhost');
 
 export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
@@ -199,7 +199,7 @@ export const AuthProvider = function ({ children }) {
                 // One of two types of messages is being received here:
                 // 1. A map of apps that updated which was retrieved from Valve's PICS service
                 // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
-                const { appid, eventsLength, apps } = JSON.parse(event.data);
+                const { appid, eventsLength, mostRecentEventTime, apps } = JSON.parse(event.data);
                 if (apps != null) {
                     const appids = Object.keys(apps);
                     for (const appid of appids) {
@@ -207,12 +207,15 @@ export const AuthProvider = function ({ children }) {
                             queueMostRecentUpdatesForGame({ appid, name: state.ownedGames[appid].name });
                         }
                     }
-                } else if (appid != null && state.ownedGames[appid] != null && eventsLength > 0) {
-                    // If the appid is present, it means a specific game has updated.
-                    // console.log(`Notified of ${eventsLength} update(s) for game ${appid} (${state.ownedGames[appid].name})`);
-                    const name = state.ownedGames[appid].name;
-                    const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
-                    notifyUser(name, icon, backupLogo);
+                } else if (appid != null) {
+                    const app = state.ownedGames[appid];
+                    if (app != null && eventsLength > 0 && (app.events.length === 0 || app.events[0]?.posttime < mostRecentEventTime)) {
+                        // If the appid is present, it means a specific game has updated.
+                        // console.log(`Notified of ${eventsLength} update(s) for game ${appid} (${state.ownedGames[appid].name})`);
+                        const name = state.ownedGames[appid].name;
+                        const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
+                        notifyUser(name, icon, backupLogo);
+                    }
                 }
                 // If this is enabled, the list updates in real time.
                 // The issue is that the list shifts around when a new game is added, which isn't ideal.

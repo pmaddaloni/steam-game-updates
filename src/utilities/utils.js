@@ -17,15 +17,15 @@ import ServerWebSocket from 'ws';
  */
 
 export function createWebSocketConnector(
-    url, { socketType = 'frontend', retryInterval = 1000, maxRetries = 10, onOpen, onClose, onMessage: externalOnMessage, onError } = {}
+    url, { socketType = 'frontend', retryInterval = 1000, maxRetries = 10, onOpen, onClose, onMessage: externalOnMessage, onError, showConsoleMsgs = false } = {}
 ) {
     let ws;
     let retries = 0;
     let isConnecting = false;
     let isClosed = false;
+    let errorOccurred = false;
     let timeoutId = null;
     let onMessage = externalOnMessage;
-    const showConsoleMsgs = process.env.NODE_ENV === 'development';
 
     // The main function to establish the connection
     function connect() {
@@ -53,27 +53,43 @@ export function createWebSocketConnector(
         ws.onclose = (event) => {
             showConsoleMsgs && console.log(`WebSocket at ${url} closed. Reason: ${event.reason}, Code: ${event.code}`);
             isConnecting = false;
-            if (onClose) onClose(event);
 
-            // Only attempt to reconnect if the close was not normal (code 1000)
-            if (event.code !== 1000 && !isClosed) {
+            // Only run the reconnect logic if an error hasn't already triggered a retry
+            if (!errorOccurred && event.code !== 1000 && !isClosed) {
                 if (retries < maxRetries) {
                     retries++;
-                    const delay = retryInterval * Math.pow(2, retries - 1); // Exponential backoff
+                    const delay = retryInterval * Math.pow(2, retries - 1);
                     showConsoleMsgs && console.log(`Connection failed. Retrying in ${delay / 1000} seconds. Attempt ${retries}/${maxRetries}...`);
                     timeoutId = setTimeout(connect, delay);
                 } else {
                     showConsoleMsgs && console.error("Max retry attempts reached. Connection failed permanently.");
                     window.alert("There was an error with the connection to the Steam Game Updates server. Please try refreshing the page.");
-                    // This is where you would show the alert to the user
                     if (onError) onError("Max retries reached. Please check your connection.");
                 }
             }
+
+            // Reset the flag after the close event has been processed
+            errorOccurred = false;
+            if (onClose) onClose(event);
         };
 
         ws.onerror = (error) => {
-            // Error events are typically followed by a 'close' event, so we just log and let 'onclose' handle the retry
-            showConsoleMsgs && console.error("WebSocket connection error:", error);
+            showConsoleMsgs && console.error("WebSocket connection error");
+            isConnecting = false;
+            errorOccurred = true; // Set the flag
+            if (onError) onError(error);
+
+            // This is where we initiate the retry logic for initial connection failures
+            if (!isClosed && retries < maxRetries) {
+                retries++;
+                const delay = retryInterval * Math.pow(2, retries - 1);
+                showConsoleMsgs && console.log(`Connection failed. Retrying in ${delay / 1000} seconds. Attempt ${retries}/${maxRetries}...`);
+                timeoutId = setTimeout(connect, delay);
+            } else if (!isClosed) {
+                showConsoleMsgs && console.error("Max retry attempts reached. Connection failed permanently.");
+                window && window.alert("There was an error with the connection to the Steam Game Updates server. Please try refreshing the page.");
+                if (onError) onError("Max retries reached. Please check your connection.");
+            }
         };
     }
 

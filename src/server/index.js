@@ -1,23 +1,24 @@
 import axios from 'axios';
 import { execSync, fork, spawn } from 'child_process';
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
 import fs from 'fs';
+import { createServer } from 'https';
 import PQueue from 'p-queue';
 import passport from 'passport';
 import SteamStrategy from 'passport-steam';
-// import SteamStrategy from 'modern-passport-steam';
-// import { createServer } from 'https';
 import path from 'path';
 import pidusage from 'pidusage';
 import sessionfilestore from 'session-file-store';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import WebSocket, { WebSocketServer } from 'ws';
+// import SteamStrategy from 'modern-passport-steam';
 
 import config from '../../config.js';
-import { PriorityQueue, webSocketConnectWithRetry } from '../utilities/utils.js';
+import { PriorityQueue, createWebSocketConnector } from '../utilities/utils.js';
 
 const environment = config.ENVIRONMENT || 'development'; // Default to 'development' if not set
 
@@ -38,6 +39,26 @@ if (environment !== 'development') {
     console.clear();
 }
 
+// START Steam Game Updates WebSocket connection
+const webSocketServerOptions = { noServer: true };
+// For now NGINX handles the secure connection to the outside world
+// if (environment !== 'development') {
+//     webSocketServerOptions.server = createServer({
+//         key: fs.readFileSync(config.SSL_KEY_PATH),
+//         cert: fs.readFileSync(config.SSL_CERT_PATH),
+//     });
+// }
+const wss = new WebSocketServer(webSocketServerOptions);
+wss.on('connection', function connection(ws, request) {
+    console.log('WebSocket connection established with a client');
+    ws.on('error', console.error);
+    ws.on('close', () => {
+        console.log('Client disconnected');
+    });
+});
+// END Steam Game Updates WebSocket co0
+// nection
+
 // Spin up SteamWebPipes server
 const MEMORY_LIMIT_MB = 100;
 const MEMORY_LIMIT_BYTES = MEMORY_LIMIT_MB * 1024 * 1024;
@@ -48,53 +69,37 @@ let ws = null;
 function initializeSteamWebPipes() {
     steamWepPipesProcess = spawn(path.join(__dirname, '../../SteamWebPipes-master/bin/SteamWebPipes'));
     // SteamWebPipes WebSocket setup
-    do {
-        console.log('Connecting to SteamWebPipes server...');
-        ws = webSocketConnectWithRetry({
-            url: 'ws://localhost:8181',
-            socketType: 'server',
-            isDev: environment === 'development'
-        });
-    } while (ws == null);
-
-    ws.on('open', () => {
-        console.log('Connected to SteamWebPipes server');
-    });
-
-    // START SteamWebPipes WebSocket connection
-    // Keep track of what has POSSIBLY changed from PICS
-    ws.on('message', (message) => {
-        const { Apps: apps } = JSON.parse(message);
-        if (apps == null) {
-            return;
-        }
-        // broadcast the PICS update message to all connected clients
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({
-                    apps
-                }));
+    console.log('Setting up SteamWebPipes server...');
+    ws = createWebSocketConnector('ws://localhost:8181', {
+        socketType: 'server',
+        showConsoleMsgs: true || environment === 'development',
+        onMessage: (message) => {
+            const { Apps: apps } = JSON.parse(message.data);
+            if (apps == null) {
+                return;
             }
-        });
-        const appids = Object.keys(apps);
-        for (const appid of appids) {
-            app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime() / 1000; // convert to seconds from ms
-        }
+            // broadcast the PICS update message to all connected clients
+            wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({
+                        apps
+                    }));
+                }
+            });
+            const appids = Object.keys(apps);
+            for (const appid of appids) {
+                app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime() / 1000; // convert to seconds from ms
+            }
+        },
+        onClose: () => console.log('Disconnected from SteamWebPipes server'),
+        onOpen: () => console.log('Connected to SteamWebPipes server'),
+        onError: (error) => console.error('SteamWebPipes error:', error)
     });
-
-    ws.on('close', () => {
-        console.log('Disconnected from SteamWebPipes server');
-    });
-
-    ws.on('error', (error) => {
-        console.error('SteamWebPipes error:', error);
-    });
-    // END SteamWebPipes WebSocket connection
+    ws.start();
 }
 initializeSteamWebPipes();
 
 setInterval(() => {
-
     if (steamWepPipesProcess?.exitCode == null && steamWepPipesProcess.signalCode == null) {
         pidusage(steamWepPipesProcess.pid)
             .then(stats => {
@@ -419,25 +424,6 @@ async function getGameIDUpdates(
 console.log(`Server last refreshed on ${new Date(app.locals.lastServerRefreshTime)} with ${app.locals.dailyLimit} requests left`);
 console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates).length} games with their updates.`);
 
-// START Steam Game Updates WebSocket connection
-const webSocketServerOptions = { port: 8081 };
-// For now NGINX handles the secure connection to the outside world
-// if (environment !== 'development') {
-//     webSocketServerOptions.server = createServer({
-//         key: fs.readFileSync(config.SSL_KEY_PATH),
-//         cert: fs.readFileSync(config.SSL_CERT_PATH),
-//     });
-// }
-const wss = new WebSocketServer(webSocketServerOptions);
-wss.on('connection', function connection(ws) {
-    console.log('WebSocket connection established with a client');
-    ws.on('error', console.error);
-    ws.on('close', () => {
-        console.log('Client disconnected');
-    });
-});
-// END Steam Game Updates WebSocket connection
-
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
 // Initial Daily Limit Interval must respect previous start time, so start with Timeout
@@ -516,7 +502,7 @@ const getGameUpdates = async (externalGameID) => {
         if (app.locals.gameIDsWithErrors.has(gameID) && !externalGameID && !priorityGameID) {
             app.locals.gameIDsToCheckIndex++;
         } else {
-            //  If a user has requested a sspecific gameID we need to process it asap.
+            //  If a user has requested a specific gameID we need to process it asap.
             const result = await getGameIDUpdates(gameID, !!externalGameID);
             app.locals.dailyLimit--;
 
@@ -679,8 +665,9 @@ setInterval(async () => {
 }, 30 * 60 * 1000);
 
 const FileStore = sessionfilestore(session);
+const sessionSecret = config.STEAM_GAME_UPDATES_SECRET;
 const sessionOptions = {
-    secret: config.STEAM_GAME_UPDATES_SECRET,
+    secret: sessionSecret,
     name: 'steam-game-updates',
     resave: false,
     saveUninitialized: true,
@@ -689,6 +676,7 @@ const sessionOptions = {
         ttl: 60 * 60 * 24 * 2,                                      // Set the time to live for sessions to 2 days
     })
 };
+const sessionMiddleware = session(sessionOptions);
 if (environment !== 'development') {
     sessionOptions.cookie = {
         sameSite: 'none',  // Required for cross-site requests
@@ -696,7 +684,7 @@ if (environment !== 'development') {
         httpOnly: true,    // Recommended for security
     };
 }
-app.use(session(sessionOptions));
+app.use(sessionMiddleware);
 app.set('trust proxy', 1);
 // Initialize Passport and use passport.session() middleware to support persistent login sessions.
 app.use(passport.initialize());
@@ -712,6 +700,8 @@ app.use(cors({
 // Middleware to parse JSON and URL-encoded bodies
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser(sessionSecret));
+
 
 // Set up view engine
 app.set('views', path.join(__dirname, './views'));
@@ -798,12 +788,11 @@ app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
     // }
 });
 
-const tempMap = {};
 // create a temp map entry with the UUID from POST
 // lookup all entries and then store in map
 // create a GET endpoint that returns paginated results
 // once the end is reached, delete the temp map entry
-
+const tempMap = {};
 app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
     const requestID = req.body.request_id;
@@ -820,6 +809,7 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
             app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
         }
+
         if (events != null) {
             updates[gameID] = events;
         }
@@ -887,7 +877,7 @@ app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, r
         updates.push(
             {
                 appid: gameID,
-                events: app.locals.allSteamGamesUpdates[gameID],
+                events,
             }
         );
     }
@@ -1006,9 +996,38 @@ app.get('/api/auth/steam/return',
     });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
+const httpServer = createServer(app);
+httpServer.on('upgrade', (request, socket, head) => {
+    // Use the Express session middleware to parse the session from the request.
+    sessionMiddleware(request, {}, () => {
+        // Check if the user is authenticated via Passport.js
+        // The passport user object is stored in the session.
+        if (request.session.passport && request.session.passport.user
+            || app.locals.mobileSessions.has(request.headers['session-id'])
+        ) {
+            // User is authenticated, proceed with the WebSocket connection.
+            // We attach the user to the request object for easy access in the
+            // 'connection' event handler.
+            request.user = request.session.passport.user;
+            console.log(`\n\nSteam user ${user.displayName} (ID: ${user.id}) connected to WebSocket.`);
+
+            wss.handleUpgrade(request, socket, head, (ws) => {
+                wss.emit('connection', ws, request);
+            });
+        } else {
+            // If no valid session or authentication is found, deny the connection.
+            console.log('\n\nAuthentication failed during WebSocket upgrade. Connection denied.');
+            socket.destroy();
+        }
+    });
+});
+httpServer.listen(PORT, () => {
     console.log(`server listening on port ${PORT}`);
 });
+
+// app.listen(PORT, () => {
+//     console.log(`server listening on port ${PORT}`);
+// });
 
 // For now NGINX handles the secure connection to the outside world
 // if (environment === 'development') {

@@ -193,7 +193,7 @@ export const AuthProvider = function ({ children }) {
         if (state.id !== '') {
             if (steamGameUpdatesSocket == null) {
                 // UPDATE THIS FROM DEVVVV
-                steamGameUpdatesSocket = new webSocketConnectWithRetry({ url: WEB_SOCKET_PATH, isDev: process.env.NODE_ENV === 'development' });
+                steamGameUpdatesSocket = webSocketConnectWithRetry({ url: WEB_SOCKET_PATH, isDev: process.env.NODE_ENV === 'development' });
             }
             steamGameUpdatesSocket.onmessage = (event) => {
                 // One of two types of messages is being received here:

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import ServerWebSocket from 'ws';
 
 /**
  * A robust WebSocket connection manager with an exponential backoff retry mechanism.
@@ -14,8 +15,9 @@ import axios from 'axios';
  * @param {function} [options.onError] A callback function for when a critical error occurs.
  * @returns {object} An object with methods to start and stop the connection.
  */
+
 export function createWebSocketConnector(
-    url, { retryInterval = 1000, maxRetries = 10, onOpen, onClose, onMessage: externalOnMessage, onError } = {}
+    url, { socketType = 'frontend', retryInterval = 1000, maxRetries = 10, onOpen, onClose, onMessage: externalOnMessage, onError } = {}
 ) {
     let ws;
     let retries = 0;
@@ -33,7 +35,7 @@ export function createWebSocketConnector(
         }
 
         isConnecting = true;
-        ws = new WebSocket(url);
+        ws = socketType === 'frontend' ? new WebSocket(url) : new ServerWebSocket(url);
         showConsoleMsgs && console.log("Attempting to connect to WebSocket at " + url);
 
         // --- Event Handlers ---

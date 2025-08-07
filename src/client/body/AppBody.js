@@ -21,13 +21,18 @@ export default function Body() {
         const gamesArray = gamesList.slice(currentIndex);
         const newList = [];
         for (const [posttime, appid] of gamesArray) {
-            const { events, name } = ownedGames[appid] ?? {};
             currentIndex++;
+            if (ownedGames[appid] == null) {
+                continue;
+            }
+
+            const { events, name } = ownedGames[appid];
             const updateIndex = events.findIndex(({ posttime: eventPosttime }) => posttime === eventPosttime);
             const update = events[updateIndex];
             if (filters.includes(update.event_type)) {
                 continue;
             }
+
             if (update != null) {
                 newList.push(<GameUpdateListComponent
                     key={appid + '-' + update.posttime}

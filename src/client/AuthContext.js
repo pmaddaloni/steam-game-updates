@@ -11,7 +11,7 @@ export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 // Break up a person's library request into chunks so as not to overwhelm the API.
-const REQUEST_SIZE = 150;
+const REQUEST_SIZE = 100;
 
 const FILTER_MAPPING = {
     major: [13, 14],

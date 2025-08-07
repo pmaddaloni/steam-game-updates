@@ -59,10 +59,24 @@ function formatTextToHtml(text) {
                     html += '<h3>';
                 } else if (word === '[/h3]') {
                     html += '</h3>';
+                } else if (word.startsWith('[h4')) {
+                    html += '<h4>';
+                } else if (word === '[/h4]') {
+                    html += '</h4>';
+                } else if (word.startsWith('[h5')) {
+                    html += '<h5>';
+                } else if (word === '[/h5]') {
+                    html += '</h5>';
                 } else if (word === '[quote]') {
                     html += '<blockquote>';
                 } else if (word === '[/quote]') {
                     html += '</blockquote>';
+                } else if (word.startsWith('[color=')) {
+                    const startIndex = word.indexOf('=') + 1
+                    const color = word.slice(startIndex, -1);
+                    html += `<span style="color: ${color};">`
+                } else if (word === '[/color]') {
+                    html += '</span>';
                 } else if (word.trim() === ':alertalert:') {
                     html += '<img src="https://community.fastly.steamstatic.com/economy/emoticon/alertalert" class="alert" alt="alertalert"></img>';
                 } else if (word.startsWith('[url=')) {

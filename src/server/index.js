@@ -323,8 +323,7 @@ app.locals.allSteamGames = await getAllSteamGameNames();
 app.locals.allSteamGamesUpdates = gameUpdatesFromFile;
 app.locals.steamGameDetails = JSON.parse(steamGameDetails);
 app.locals.allSteamGamesUpdatesPossiblyChanged = JSON.parse(allSteamGamesUpdatesPossiblyChangedFromFile);
-app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
-app.locals.gameIDsToCheckIndex = parseInt(gameIDsToCheckIndex, 10);
+app.locals.gameIDsToCheckIndex = parseInt(JSON.parse(gameIDsToCheckIndex));
 app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
 app.locals.userOwnedGames = environment === 'development' ? JSON.parse(userOwnedGames) : null;
 app.locals.waitBeforeRetrying = false;
@@ -442,15 +441,30 @@ wss.on('connection', function connection(ws) {
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
 // Initial Daily Limit Interval must respect previous start time, so start with Timeout
+function getNextMidnight() {
+    const now = new Date();
+
+    // Create a new Date object for tomorrow.
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+
+    // Set the time of tomorrow to midnight (00:00:00).
+    tomorrow.setHours(0, 0, 0, 0);
+    const delay = tomorrow.getTime() - now.getTime();
+
+    console.log(`Next refresh will be scheduled to run in ${delay} ms at: ${tomorrow}`);
+    // Calculate the delay in milliseconds until tomorrow at midnight.
+    return delay;
+}
 setTimeout(() => {
     app.locals.dailyLimit = DAILY_LIMIT;
     app.locals.lastServerRefreshTime = new Date().getTime();
 
-    setInterval(() => {
+    setTimeout(() => {
         app.locals.dailyLimit = DAILY_LIMIT;
         app.locals.lastServerRefreshTime = new Date().getTime();
-    }, 1000 * 60 * 60 * 24);    // Set a new interval of 24 hours
-}, (app.locals.lastServerRefreshTime + (1000 * 60 * 60 * 24)) - (new Date().getTime()));  // (lastStartTime + 24hrs) - currentTime
+    }, getNextMidnight());
+}, getNextMidnight());
 
 // Log out all users every 2 days.
 // Maybe make this longer in the future.
@@ -472,7 +486,6 @@ setInterval(async () => {
             app.locals.dailyLimit--;
             if (allGames) {
                 app.locals.allSteamGames = allGames;
-                app.locals.gameIDsToCheck = app.locals.allSteamGames.map(game => game.appid);
             } else {
                 app.locals.waitBeforeRetrying = true;
                 setTimeout(() => app.locals.waitBeforeRetrying = false, RETRY_WAIT_TIME);
@@ -493,10 +506,10 @@ const getGameUpdates = async (externalGameID) => {
         }
 
         let gameID = externalGameID ?? priorityGameID
-            ?? app.locals.gameIDsToCheck[app.locals.gameIDsToCheckIndex];
+            ?? app.locals.allSteamGames[app.locals.gameIDsToCheckIndex]?.appid;
         if (gameID == null) {
             app.locals.gameIDsToCheckIndex = 0; // Loop back to the beginning
-            gameID = app.locals.gameIDsToCheck[0];
+            gameID = app.locals.allSteamGames[0].appid;
         }
 
         // Skip the gameID if it has already been checked and failed, and this wasn't a manual request.
@@ -559,9 +572,6 @@ const getGameUpdates = async (externalGameID) => {
                 }
             }
         }
-        if (app.locals.gameIDsToCheckIndex >= app.locals.gameIDsToCheck.length) {
-            app.locals.gameIDsToCheckIndex = 0; // Loop back to the beginning
-        }
     }
 
     if (app.locals.dailyLimit === 0) {
@@ -570,7 +580,7 @@ const getGameUpdates = async (externalGameID) => {
     }
 }
 
-// Continuously fetch game's updates every 1 second iterating over the gameIDsToCheck array.
+// Continuously fetch game's updates every 1 second iterating over the allgames array.
 // Constraint of 100000k allows for an average of one request every 0.86 seconds over 24 hours.
 // Constraint of 200 per 5 minutes restricts to no more than one request every 1.5 seconds within any 5 - minute window.
 // 200 constraint doesn't appear to affect this request...

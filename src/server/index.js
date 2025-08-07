@@ -78,7 +78,7 @@ function initializeSteamWebPipes() {
         });
         const appids = Object.keys(apps);
         for (const appid of appids) {
-            app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime();
+            app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime() / 1000; // convert to seconds from ms
         }
     });
 
@@ -531,8 +531,8 @@ const getGameUpdates = async (externalGameID) => {
                     const { posttime, body, gid, headline } = event.announcement_body;
                     return { posttime, body, gid, headline, event_type: event.event_type };
                 });
-                const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0) * 1000;
-                const mostRecentPreviouslyKnownEventTime = (app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0) * 1000;
+                const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0);
+                const mostRecentPreviouslyKnownEventTime = (app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0);
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
@@ -545,7 +545,7 @@ const getGameUpdates = async (externalGameID) => {
                             client.send(JSON.stringify({
                                 appid: gameID,
                                 eventsLength: app.locals.allSteamGamesUpdates[gameID]?.length,
-                                // mostRecentUpdateTime
+                                mostRecentEventTime
                             }));
                         }
                     });
@@ -816,7 +816,7 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
     for (const gameID of gameIDs) {
         // (The gameID is the second element in the array)
         const events = app.locals.allSteamGamesUpdates[gameID];
-        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime * 1000 ?? 0)) {
+        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
             app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
         }
@@ -880,7 +880,7 @@ app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, r
     for (const gameID of gameIDs) {
         // (The gameID is the second element in the array)
         const events = app.locals.allSteamGamesUpdates[gameID];
-        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime * 1000 ?? 0)) {
+        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
             app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
         }
@@ -901,12 +901,12 @@ app.post('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
         const events = app.locals.allSteamGamesUpdates[gameID];
-        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime * 1000 ?? 0)) {
+        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
             app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
         }
 
         const mostRecentUpdateTime =
-            Math.max((app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] ?? 0), (events?.[0]?.posttime * 1000 ?? 0))
+            Math.max((app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] ?? 0), (events?.[0]?.posttime ?? 0))
         if (events != null && mostRecentUpdateTime > lastCheckTime) {
             // We know for sure that there has been some activity since the client last checked
             gameIDsWithUpdates.push(gameID);

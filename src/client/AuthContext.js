@@ -108,6 +108,7 @@ const reducer = (state, { type, value }) => {
 };
 
 let gameDetailsWorker = null;
+let gameUpdatesWorker = null;
 let steamGameUpdatesSocket = null;
 
 export const AuthProvider = function ({ children }) {
@@ -154,8 +155,9 @@ export const AuthProvider = function ({ children }) {
     // Web worker setup
     useEffect(() => {
         if (window.Worker) {
-            gameDetailsWorker = new Worker(new URL("./workers/gameDetailsWorker.js", import.meta.url));
+            gameUpdatesWorker = new Worker(new URL("./workers/gameUpdatesWorker.js", import.meta.url));
 
+            gameDetailsWorker = new Worker(new URL("./workers/gameDetailsWorker.js", import.meta.url));
             // Set up event listeners for messages from the worker
             gameDetailsWorker.onmessage = function (event) {
                 const { loadingProgress, ownedGamesWithUpdates, gameUpdatesIDs } = event.data;
@@ -169,6 +171,7 @@ export const AuthProvider = function ({ children }) {
             };
             // Clean up the worker when the component unmounts
             return () => {
+                gameUpdatesWorker.terminate();
                 gameDetailsWorker.terminate();
             };
         } else {
@@ -176,94 +179,45 @@ export const AuthProvider = function ({ children }) {
         }
     }, []);
 
-    // async function queueMostRecentUpdatesForGame({ appid, name }) {
-    //     if (appid == null) {
-    //         return null;
-    //     }
-    //     try {
-    //         await axios.post('/api/game-updates', { params: { appid } });
-    //     } catch (err) {
-    //         console.error(`Requesting info about ${appid} (${name}) updates failed.`, err);
-    //         return err;
-    //     }
-    // }
-
-    // const executeWithDelay = async (calls, delayInMs = 1000) => {
-    //     for (const call of calls) {
-    //         try {
-    //             await call(); // Await the function call to ensure it completes
-    //         } catch (error) {
-    //             console.error('An error occurred during a queued call:', error);
-    //         }
-
-    //         // Wait for the specified delay before the next iteration
-    //         await new Promise(resolve => setTimeout(resolve, delayInMs));
-    //     }
-    //     console.log('All updates have been queued.');
-    // };
-
-    // const executeWithDelay = async (calls, delayInMs = 2000) => {
-    //     // Use reduce to chain the promises sequentially. The `Promise.resolve()` is the initial value.
-    //     await calls.reduce(async (previousPromise, currentCall) => {
-    //         // Wait for the previous promise (from the last iteration) to resolve.
-    //         await previousPromise;
-
-    //         // Execute the current call and await its completion.
-    //         try {
-    //             await currentCall();
-    //         } catch (error) {
-    //             console.error('An error occurred during a queued call:', error);
-    //         }
-
-    //         console.log(`--- Waiting for ${delayInMs / 1000} seconds before next call ---`);
-    //         // Return a new promise that resolves after the specified delay.
-    //         // This promise becomes the `previousPromise` for the next iteration.
-    //         return new Promise(resolve => setTimeout(resolve, delayInMs));
-    //     }, Promise.resolve()); // The starting point of our promise chain.
-
-    //     console.log('All updates have been queued.');
-    // };
-
     // Web socket setup
     useEffect(() => {
         if (state.id !== '') {
             if (steamGameUpdatesSocket == null) {
-                steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH);
-                steamGameUpdatesSocket.start();
-            }
-            const onMessage = async (event) => {
-                // One of two types of messages is being received here:
-                // 1. A map of apps that updated which was retrieved from Valve's PICS service
-                // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
-                const { appid, eventsLength, mostRecentEventTime, apps } = JSON.parse(event.data);
-                // const gameRequests = [];
-                if (apps != null) {
-                    const appids = Object.keys(apps);
-                    for (const appid of appids) {
-                        if (state.ownedGames[appid] != null) {
-                            // gameRequests.push((() => queueMostRecentUpdatesForGame({ appid, name: state.ownedGames[appid].name })));
+                const onMessage = async (event) => {
+                    // One of two types of messages is being received here:
+                    // 1. A map of apps that updated which was retrieved from Valve's PICS service
+                    // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
+                    const { appid, eventsLength, mostRecentEventTime, apps } = JSON.parse(event.data);
+
+                    if (apps != null) {
+                        const appids = Object.keys(apps);
+                        for (const appid of appids) {
+                            if (state.ownedGames[appid] != null) {
+                                for (let i = 0; i < 2; i++)
+                                    gameUpdatesWorker.postMessage({ appid, name: state.ownedGames?.[appid]?.name ?? 'none' })
+                            }
+                        }
+                    } else if (appid != null) {
+                        const app = state.ownedGames[appid];
+                        if (app != null && eventsLength > 0 && (app.events.length === 0 || app.events[0]?.posttime < mostRecentEventTime)) {
+                            // If the appid is present, it means a specific game has updated.
+                            // console.log(`Notified of ${eventsLength} update(s) for game ${appid} (${state.ownedGames[appid].name})`);
+                            const name = state.ownedGames[appid].name;
+                            const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
+                            notifyUser(name, icon, backupLogo);
                         }
                     }
-                    // executeWithDelay(gameRequests);
-                } else if (appid != null) {
-                    const app = state.ownedGames[appid];
-                    if (app != null && eventsLength > 0 && (app.events.length === 0 || app.events[0]?.posttime < mostRecentEventTime)) {
-                        // If the appid is present, it means a specific game has updated.
-                        // console.log(`Notified of ${eventsLength} update(s) for game ${appid} (${state.ownedGames[appid].name})`);
-                        const name = state.ownedGames[appid].name;
-                        const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
-                        notifyUser(name, icon, backupLogo);
-                    }
+                    // If this is enabled, the list updates in real time.
+                    // The issue is that the list shifts around when a new game is added, which isn't ideal.
+                    // For now utilizing browser notifications to alert the user of updates instead.
+                    /*  else if (state.ownedGames[appid] != null && events?.length > 0) {
+                        dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name: state.ownedGames[appid].name, events } } });
+                        dispatch({ type: 'updateGameUpdates', value: [[mostRecentUpdateTime, appid]] });
+                    } */
                 }
-                // If this is enabled, the list updates in real time.
-                // The issue is that the list shifts around when a new game is added, which isn't ideal.
-                // For now utilizing browser notifications to alert the user of updates instead.
-                /*  else if (state.ownedGames[appid] != null && events?.length > 0) {
-                    dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name: state.ownedGames[appid].name, events } } });
-                    dispatch({ type: 'updateGameUpdates', value: [[mostRecentUpdateTime, appid]] });
-                } */
+                steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH, { onMessage });
+                steamGameUpdatesSocket.start();
             }
-            steamGameUpdatesSocket.updateOnMessage(onMessage);
         }
     }, [state.id, state.ownedGames]);
 
@@ -280,10 +234,10 @@ export const AuthProvider = function ({ children }) {
                 }
             }, {});
             return ownedGames;
-        } else {
+        } /* else {
             const ownedGames = localStorage.getItem('steam-game-updates-ownedGames');
             return ownedGames && JSON.parse(ownedGames);
-        };
+        }; */
     }, [state.id])
 
     const fetchMoreUpdates = useCallback(() => {

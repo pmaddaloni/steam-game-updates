@@ -17,7 +17,14 @@ import ServerWebSocket from 'ws';
  */
 
 export function createWebSocketConnector(
-    url, { socketType = 'frontend', retryInterval = 1000, maxRetries = 10, onOpen, onClose, onMessage: externalOnMessage, onError, showConsoleMsgs = false } = {}
+    url, {
+        socketType = 'frontend',
+        retryInterval = 1000,
+        maxRetries = 10,
+        onOpen, onClose,
+        onMessage: externalOnMessage,
+        onError,
+        showConsoleMsgs = false } = {}
 ) {
     let ws;
     let retries = 0;

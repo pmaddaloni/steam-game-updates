@@ -12,7 +12,7 @@ import SteamStrategy from 'passport-steam';
 import path from 'path';
 import pidusage from 'pidusage';
 import sessionfilestore from 'session-file-store';
-import { fileURLToPath } from 'url';
+import url, { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import WebSocket, { WebSocketServer } from 'ws';
 // import SteamStrategy from 'modern-passport-steam';
@@ -38,6 +38,164 @@ if (environment !== 'development') {
 } else {
     console.clear();
 }
+
+// Passport session setup.
+//   To support persistent login sessions, Passport needs to be able to
+//   serialize users into and deserialize users out of the session.  Typically,
+//   this will be as simple as storing the user ID when serializing, and finding
+//   the user by ID when deserializing.  However, since this example does not
+//   have a database of user records, the complete Steam profile is serialized
+//   and deserialized.
+passport.serializeUser(function (user, done) {
+    done(null, user);
+});
+
+passport.deserializeUser(function (obj, done) {
+    done(null, obj);
+});
+
+process.title = 'SteamGameUpdates-Server';
+
+// Use the SteamStrategy within Passport.
+//   Strategies in passport require a `validate` function, which accept
+//   credentials (in this case, an OpenID identifier and profile), and invoke a
+//   callback with a user object.
+passport.use(new SteamStrategy({
+    returnURL: (config.HOST_ORIGIN || 'http://localhost') + `${environment === 'development' ? ':8080' : ''}/api/auth/steam/return`,
+    realm: config.HOST_ORIGIN || 'http://localhost:8080/',
+    apiKey: config.STEAM_API_KEY,
+    passReqToCallback: true,
+}, function (req, identifier, user, done) {
+    // check for 'JSON response invalid, your API key is most likely wrong'
+    console.log('\n\nUser logged in:', user, '\n', req.session)
+    process.nextTick(function () {
+        user.identifier = identifier;
+        if (req.session.oauthRedirectUri) {
+            user.redirect_uri = req.session.oauthRedirectUri;
+        }
+        if (req.session.state) {
+            user.state = req.session.state;
+        }
+        return done(null, user);
+    });
+}));
+
+const DAILY_LIMIT = 200000;
+const RETRY_WAIT_TIME = 5 * 60 * 1000;      // Time in minutes
+const REQUEST_WAIT_TIME = 500;              // 864 would keep within 100k a day, but it appears there is no limit on updates
+const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per REQUEST_WAIT_TIME
+
+console.log("Loading in data from disk...")
+// Check if storage folders exist, and create if not.
+const passportSessionsDirectoryPath = path.join(__dirname, './storage/passport-sessions');
+if (!fs.existsSync(passportSessionsDirectoryPath)) {
+    try {
+        fs.mkdirSync(passportSessionsDirectoryPath, { recursive: true });   // create parent dir if need be.
+        console.log(`Directory '${passportSessionsDirectoryPath}' created successfully.`);
+    } catch (err) {
+        console.error('Error creating directory. Must abort application and fix - check permissions.', err);
+        process.exit(1);
+    }
+}
+
+const allSteamGameUpdatesDirectoryPath = path.join(__dirname, './storage/all-steam-game-updates');
+if (!fs.existsSync(allSteamGameUpdatesDirectoryPath)) {
+    try {
+        fs.mkdirSync(allSteamGameUpdatesDirectoryPath, { recursive: true });
+        console.log(`Directory '${allSteamGameUpdatesDirectoryPath}' created successfully.`);
+    } catch (err) {
+        console.error('Error creating directory. Must abort application and fix - check permissions.', err);
+        process.exit(1);
+    }
+}
+// End storage folders.
+
+let gameUpdatesFromFile = {};   // {[appid]: events[]}
+fs.readdirSync(allSteamGameUpdatesDirectoryPath).forEach(fileName => {
+    if (path.extname(fileName) === '.json') {
+        try {
+            const result =
+                fs.readFileSync(path.join(__dirname, `./storage/all-steam-game-updates/${fileName}`),
+                    { encoding: 'utf8', flag: 'r' }) || '{}';
+            const parsedResult = JSON.parse(result);
+            gameUpdatesFromFile = { ...gameUpdatesFromFile, ...parsedResult };
+        } catch (e) {
+            console.error(`failure reading file ${fileName}.json`);
+        }
+    }
+});
+const allSteamGamesUpdatesPossiblyChangedFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json'), { encoding: 'utf8', flag: 'r' })
+    : '{}';    // {[appid]: POSSIBLE most recent update time}
+const gameIDsWithErrors = fs.existsSync(path.join(__dirname, './storage/gameIDsWithErrors.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/gameIDsWithErrors.json'), { encoding: 'utf8', flag: 'r' })
+    : '[]';    // [appid]
+const gameIDsToCheckIndex = fs.existsSync(path.join(__dirname, './storage/gameIDsToCheckIndex.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/gameIDsToCheckIndex.json'), { encoding: 'utf8', flag: 'r' })
+    : '0';     // For incrementing through ALL steam games - ~ 100k requests/day
+const steamGameDetails = fs.existsSync(path.join(__dirname, './storage/steamGameDetails.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/steamGameDetails.json'), { encoding: 'utf8', flag: 'r' })
+    : '{}';    // {[appid]: {name, img_icon_url, img_logo_url, ...}}
+const serverRefreshTimeAndCount = fs.existsSync(path.join(__dirname, './storage/serverRefreshTimeAndCount.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/serverRefreshTimeAndCount.json'), { encoding: 'utf8', flag: 'r' })
+    : JSON.stringify([new Date().getTime(), DAILY_LIMIT]); // Last time the server was refreshed (i.e. daily limit reset) and the last recorded daily limit
+const mobileSessions = fs.existsSync(path.join(__dirname, './storage/mobileSessions.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/mobileSessions.json'), { encoding: 'utf8', flag: 'r' })
+    : '[]';    // [ sessionID-1, sessionID-2, ... ]
+const userOwnedGames = environment === 'development' &&
+    fs.existsSync(path.join(__dirname, './storage/userOwnedGames.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/userOwnedGames.json'), { encoding: 'utf8', flag: 'r' })
+    : '{}';
+
+const app = express();
+app.locals.requestQueue = new PQueue({ interval: REQUEST_WAIT_TIME, intervalCap: NUMBER_OF_REQUESTS_PER_WAIT_TIME });
+app.locals.gameIDsToCheckPriorityQueue = new PriorityQueue();
+
+function makeRequest(url, method = 'get') {
+    return async () => {
+        return axios[method](url);
+    }
+};
+
+// https://stackoverflow.com/questions/33030092/webworkers-with-a-node-js-express-application
+async function getAllSteamGameNames() {
+    return app.locals.requestQueue.add(
+        makeRequest('https://api.steampowered.com/ISteamApps/GetAppList/v0002/')
+    ).then((result) => {
+        // disregard apps without a name
+        let games = result.data.applist.apps.filter(app => app.name !== '');//.sort((a, b) => a.appid - b.appid);
+        const gameHash = games.reduce((acc, game) => {
+            acc[game.appid] = game.name;
+            return acc;
+        }, {});
+        // Remove appid duplicates that can be present in the returned list
+        // This isn't ideal, but it appears to be the most efficient way to do this, and is pretty fast.
+        games = Array.from(new Set(games.map(a => a.appid)));
+        games = games.map((appid) => ({
+            appid,
+            name: gameHash[appid]
+        }));
+        console.log(`Server has retrieved ${games.length} games`);
+        return games;
+    }).catch(err => {
+        console.error('Retrieving all games from Steam API failed.', err);
+    })
+}
+
+app.locals.allSteamGames = await getAllSteamGameNames();
+app.locals.allSteamGamesUpdates = gameUpdatesFromFile;
+app.locals.steamGameDetails = JSON.parse(steamGameDetails);
+app.locals.allSteamGamesUpdatesPossiblyChanged = JSON.parse(allSteamGamesUpdatesPossiblyChangedFromFile);
+app.locals.gameIDsToCheckIndex = parseInt(JSON.parse(gameIDsToCheckIndex));
+app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
+app.locals.userOwnedGames = environment === 'development' ? JSON.parse(userOwnedGames) : null;
+app.locals.waitBeforeRetrying = false;
+const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
+app.locals.dailyLimit = lastDailyLimitUsage;
+app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
+// Since passport isn't properly tracking mobile sessions, we need to track them ourselves.
+// We generate our own UUIDs to check against for the mobile app.
+app.locals.mobileSessions = new Set(JSON.parse(mobileSessions));
 
 // START Steam Game Updates WebSocket connection
 const webSocketServerOptions = { noServer: true };
@@ -181,163 +339,6 @@ const initializeFileWriterProcess = () => {
         });
     }
 };
-
-// Passport session setup.
-//   To support persistent login sessions, Passport needs to be able to
-//   serialize users into and deserialize users out of the session.  Typically,
-//   this will be as simple as storing the user ID when serializing, and finding
-//   the user by ID when deserializing.  However, since this example does not
-//   have a database of user records, the complete Steam profile is serialized
-//   and deserialized.
-passport.serializeUser(function (user, done) {
-    done(null, user);
-});
-
-passport.deserializeUser(function (obj, done) {
-    done(null, obj);
-});
-
-process.title = 'SteamGameUpdates-Server';
-
-// Use the SteamStrategy within Passport.
-//   Strategies in passport require a `validate` function, which accept
-//   credentials (in this case, an OpenID identifier and profile), and invoke a
-//   callback with a user object.
-passport.use(new SteamStrategy({
-    returnURL: (config.HOST_ORIGIN || 'http://localhost') + `${environment === 'development' ? ':8080' : ''}/api/auth/steam/return`,
-    realm: config.HOST_ORIGIN || 'http://localhost:8080/',
-    apiKey: config.STEAM_API_KEY,
-    passReqToCallback: true,
-}, function (req, identifier, user, done) {
-    // check for 'JSON response invalid, your API key is most likely wrong'
-    console.log('\n\nUser logged in:', user, '\n', req.session)
-    process.nextTick(function () {
-        user.identifier = identifier;
-        if (req.session.oauthRedirectUri) {
-            user.redirect_uri = req.session.oauthRedirectUri;
-        }
-        if (req.session.state) {
-            user.state = req.session.state;
-        }
-        return done(null, user);
-    });
-}));
-
-const DAILY_LIMIT = 200000;
-const RETRY_WAIT_TIME = 5 * 60 * 1000;      // Time in minutes
-const REQUEST_WAIT_TIME = 500;              // 864 would keep within 100k a day, but it appears there is no limit on updates
-const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per REQUEST_WAIT_TIME
-
-// Check if storage folders exist, and create if not.
-const passportSessionsDirectoryPath = path.join(__dirname, './storage/passport-sessions');
-if (!fs.existsSync(passportSessionsDirectoryPath)) {
-    try {
-        fs.mkdirSync(passportSessionsDirectoryPath, { recursive: true });   // create parent dir if need be.
-        console.log(`Directory '${passportSessionsDirectoryPath}' created successfully.`);
-    } catch (err) {
-        console.error('Error creating directory. Must abort application and fix - check permissions.', err);
-        process.exit(1);
-    }
-}
-
-const allSteamGameUpdatesDirectoryPath = path.join(__dirname, './storage/all-steam-game-updates');
-if (!fs.existsSync(allSteamGameUpdatesDirectoryPath)) {
-    try {
-        fs.mkdirSync(allSteamGameUpdatesDirectoryPath, { recursive: true });
-        console.log(`Directory '${allSteamGameUpdatesDirectoryPath}' created successfully.`);
-    } catch (err) {
-        console.error('Error creating directory. Must abort application and fix - check permissions.', err);
-        process.exit(1);
-    }
-}
-// End storage folders.
-
-let gameUpdatesFromFile = {};   // {[appid]: events[]}
-fs.readdirSync(allSteamGameUpdatesDirectoryPath).forEach(fileName => {
-    if (path.extname(fileName) === '.json') {
-        try {
-            const result =
-                fs.readFileSync(path.join(__dirname, `./storage/all-steam-game-updates/${fileName}`),
-                    { encoding: 'utf8', flag: 'r' }) || '{}';
-            const parsedResult = JSON.parse(result);
-            gameUpdatesFromFile = { ...gameUpdatesFromFile, ...parsedResult };
-        } catch (e) {
-            console.error(`failure reading file ${fileName}.json`);
-        }
-    }
-});
-const allSteamGamesUpdatesPossiblyChangedFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json'), { encoding: 'utf8', flag: 'r' })
-    : '{}';    // {[appid]: POSSIBLE most recent update time}
-const gameIDsWithErrors = fs.existsSync(path.join(__dirname, './storage/gameIDsWithErrors.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/gameIDsWithErrors.json'), { encoding: 'utf8', flag: 'r' })
-    : '[]';    // [appid]
-const gameIDsToCheckIndex = fs.existsSync(path.join(__dirname, './storage/gameIDsToCheckIndex.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/gameIDsToCheckIndex.json'), { encoding: 'utf8', flag: 'r' })
-    : '0';     // For incrementing through ALL steam games - ~ 100k requests/day
-const steamGameDetails = fs.existsSync(path.join(__dirname, './storage/steamGameDetails.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/steamGameDetails.json'), { encoding: 'utf8', flag: 'r' })
-    : '{}';    // {[appid]: {name, img_icon_url, img_logo_url, ...}}
-const serverRefreshTimeAndCount = fs.existsSync(path.join(__dirname, './storage/serverRefreshTimeAndCount.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/serverRefreshTimeAndCount.json'), { encoding: 'utf8', flag: 'r' })
-    : JSON.stringify([new Date().getTime(), DAILY_LIMIT]); // Last time the server was refreshed (i.e. daily limit reset) and the last recorded daily limit
-const mobileSessions = fs.existsSync(path.join(__dirname, './storage/mobileSessions.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/mobileSessions.json'), { encoding: 'utf8', flag: 'r' })
-    : '[]';    // [ sessionID-1, sessionID-2, ... ]
-const userOwnedGames = environment === 'development' &&
-    fs.existsSync(path.join(__dirname, './storage/userOwnedGames.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/userOwnedGames.json'), { encoding: 'utf8', flag: 'r' })
-    : '{}';
-
-const app = express();
-app.locals.requestQueue = new PQueue({ interval: REQUEST_WAIT_TIME, intervalCap: NUMBER_OF_REQUESTS_PER_WAIT_TIME });
-app.locals.gameIDsToCheckPriorityQueue = new PriorityQueue();
-
-function makeRequest(url, method = 'get') {
-    return async () => {
-        return axios[method](url);
-    }
-};
-
-// https://stackoverflow.com/questions/33030092/webworkers-with-a-node-js-express-application
-async function getAllSteamGameNames() {
-    return app.locals.requestQueue.add(
-        makeRequest('https://api.steampowered.com/ISteamApps/GetAppList/v0002/')
-    ).then((result) => {
-        // disregard apps without a name
-        let games = result.data.applist.apps.filter(app => app.name !== '');//.sort((a, b) => a.appid - b.appid);
-        const gameHash = games.reduce((acc, game) => {
-            acc[game.appid] = game.name;
-            return acc;
-        }, {});
-        // Remove appid duplicates that can be present in the returned list
-        // This isn't ideal, but it appears to be the most efficient way to do this, and is pretty fast.
-        games = Array.from(new Set(games.map(a => a.appid)));
-        games = games.map((appid) => ({
-            appid,
-            name: gameHash[appid]
-        }));
-        console.log(`Server has retrieved ${games.length} games`);
-        return games;
-    }).catch(err => {
-        console.error('Retrieving all games from Steam API failed.', err);
-    })
-}
-
-app.locals.allSteamGames = await getAllSteamGameNames();
-app.locals.allSteamGamesUpdates = gameUpdatesFromFile;
-app.locals.steamGameDetails = JSON.parse(steamGameDetails);
-app.locals.allSteamGamesUpdatesPossiblyChanged = JSON.parse(allSteamGamesUpdatesPossiblyChangedFromFile);
-app.locals.gameIDsToCheckIndex = parseInt(JSON.parse(gameIDsToCheckIndex));
-app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
-app.locals.userOwnedGames = environment === 'development' ? JSON.parse(userOwnedGames) : null;
-app.locals.waitBeforeRetrying = false;
-const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
-app.locals.dailyLimit = lastDailyLimitUsage;
-app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
-// Since passport isn't properly tracking mobile sessions, we need to track them ourselves.
-// We generate our own UUIDs to check against for the mobile app.
-app.locals.mobileSessions = new Set(JSON.parse(mobileSessions));
 
 const ensureAuthenticated = function (req, res, next) {
     if (req.isAuthenticated() || app.locals.mobileSessions.has(req.headers['session-id'])) {
@@ -1002,21 +1003,26 @@ httpServer.on('upgrade', (request, socket, head) => {
     sessionMiddleware(request, {}, () => {
         // Check if the user is authenticated via Passport.js
         // The passport user object is stored in the session.
+        const urlParts = url.parse(request.url, true);
+        const sessionID = urlParts.query['session-id'];
+
         if ((request.session.passport && request.session.passport.user)
-            || app.locals.mobileSessions.has(request.headers['session-id'])
+            || (sessionID != null && app.locals.mobileSessions.has(sessionID))
         ) {
-            // User is authenticated, proceed with the WebSocket connection.
-            // We attach the user to the request object for easy access in the
-            // 'connection' event handler.
-            const user = request.session.passport.user;
-            console.log(`\n\nSteam user ${user.displayName} (ID: ${user.id}) connected to WebSocket.`);
+            const clientIP = request.headers['x-forwarded-for'] || request.socket.remoteAddress;
+            if (request.session.passport) {
+                const user = request.session.passport.user;
+                console.log(`\nSteam user ${user.displayName} (ID: ${user.id}) connected from ${clientIP} to WebSocket.\n`);
+            } else {
+                console.log(`\nClient connected from ${clientIP} to WebSocket.\n`);
+            }
 
             wss.handleUpgrade(request, socket, head, (ws) => {
                 wss.emit('connection', ws, request);
             });
         } else {
             // If no valid session or authentication is found, deny the connection.
-            console.log('\n\nAuthentication failed during WebSocket upgrade. Connection denied.');
+            console.log('\nAuthentication failed during WebSocket upgrade. Connection denied.\n');
             socket.destroy();
         }
     });

@@ -36,7 +36,7 @@ const defaultState = {
     identifier: '',
     provider: '',
     photos: [],
-    ownedGames: {},     // { [appid]: {name, events} }
+    ownedGames: null,     // { [appid]: {name, events} }
     gameUpdates: [],     // [ [updateTime, appid], ... ]
     filteredList: null,
     loadingProgress: null,
@@ -192,12 +192,12 @@ export const AuthProvider = function ({ children }) {
                     if (apps != null) {
                         const appids = Object.keys(apps);
                         for (const appid of appids) {
-                            if (state.ownedGames[appid] != null) {
+                            if (state.ownedGames && state.ownedGames[appid] != null) {
                                 for (let i = 0; i < 2; i++)
                                     gameUpdatesWorker.postMessage({ appid, name: state.ownedGames?.[appid]?.name ?? 'none' })
                             }
                         }
-                    } else if (appid != null) {
+                    } else if (appid != null && state.ownedGames != null) {
                         const app = state.ownedGames[appid];
                         if (app != null && eventsLength > 0 && (app.events.length === 0 || app.events[0]?.posttime < mostRecentEventTime)) {
                             // If the appid is present, it means a specific game has updated.
@@ -245,7 +245,7 @@ export const AuthProvider = function ({ children }) {
     }, [state.ownedGames]);
 
     useEffect(() => {
-        if (state.id && Object.keys(state.ownedGames).length === 0) {
+        if (state.id && state.ownedGames == null) {
             (async () => {
                 dispatch({ type: 'updateLoadingProgress', value: 0 });
                 // First grab all of a user's owned games
@@ -253,11 +253,15 @@ export const AuthProvider = function ({ children }) {
                     const ownedGames = await getAllUserOwnedGames();
                     // total is one request for getting owned games, one for posting their keys to server
                     // and # of ownedGames divided by chunk size
-                    const totalNumberOfRequests = Math.ceil(Object.keys(ownedGames).length / REQUEST_SIZE) + 2;
                     // Then send the owned games to the worker to get their events
                     if (ownedGames) {
+                        const totalNumberOfRequests = Math.ceil(Object.keys(ownedGames).length / REQUEST_SIZE) + 2;
                         dispatch({ type: 'updateLoadingProgress', value: (1 / totalNumberOfRequests) * 100 });
                         gameDetailsWorker.postMessage({ ownedGames, totalNumberOfRequests, requestSize: REQUEST_SIZE });
+                    } else {
+                        dispatch({ type: 'updateLoadingProgress', value: 100 });
+                        dispatch({ type: 'updateOwnedGames', value: {} });
+                        dispatch({ type: 'updateGameUpdates', value: [] });
                     }
                 } catch (err) {
                     console.error('Getting owned games failed.', err);

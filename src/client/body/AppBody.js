@@ -179,11 +179,19 @@ export default function Body() {
                                 <small><b>**</b>Your Steam profile must be public for this to work.<b>**</b></small>
                             </>
                             :
-                            loadingProgress === 100 && ownedGames.length === 0 ?
+                            loadingProgress === 100 && ownedGames != null ?
                                 <>
                                     It seems like you don't own any Steam games...
                                     <br />
-                                    <small><b>**</b>If this isn't the case try logging out and then back in.<b>**</b></small>
+                                    <small>
+                                        <b>**</b>
+                                        {' Make sure that your '}
+                                        <a href={`https://steamcommunity.com/profiles/${id}/edit/settings`} target='_blank' rel="noreferrer">"Game Details"</a>
+                                        {' are set to "Public" '}
+                                        <b>**</b>
+                                    </small>
+                                    <br />
+                                    <small><b>**</b> If this isn't the case try logging out and then back in. <b>**</b></small>
                                 </>
                                 : loadingProgress === 100 && filteredList != null ?
                                     <>No search results - try something else...</>

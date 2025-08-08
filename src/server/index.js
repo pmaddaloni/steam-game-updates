@@ -111,19 +111,29 @@ if (!fs.existsSync(allSteamGameUpdatesDirectoryPath)) {
 // End storage folders.
 
 let gameUpdatesFromFile = {};   // {[appid]: events[]}
+let totalSizeLoaded = 0;
 fs.readdirSync(allSteamGameUpdatesDirectoryPath).forEach(fileName => {
+    console.log(fileName)
     if (path.extname(fileName) === '.json') {
+        const oneMB = 1024 * 1024;
         try {
-            const result =
-                fs.readFileSync(path.join(__dirname, `./storage/all-steam-game-updates/${fileName}`),
-                    { encoding: 'utf8', flag: 'r' }) || '{}';
+            const filePath = `${allSteamGameUpdatesDirectoryPath}/${fileName}`;
+            const stats = fs.statSync(filePath);
+            const fileSizeInMB = (stats.size / oneMB).toFixed(2);
+            totalSizeLoaded += Number(fileSizeInMB);
+            console.log(`Loading file ${fileName} of ${fileSizeInMB}, loaded a total of ` +
+                `${(totalSizeLoaded > 1000 ?
+                    `${(totalSizeLoaded / 1000).toFixed(2)} GB` :
+                    `${totalSizeLoaded.toFixed(2)} MB`)}`);
+            const result = fs.readFileSync(filePath, { encoding: 'utf8', flag: 'r' }) || '{}';
             const parsedResult = JSON.parse(result);
             gameUpdatesFromFile = { ...gameUpdatesFromFile, ...parsedResult };
         } catch (e) {
-            console.error(`failure reading file ${fileName}.json`);
+            console.error(`failure reading file ${fileName}.json`, e);
         }
     }
 });
+
 const allSteamGamesUpdatesPossiblyChangedFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json'), { encoding: 'utf8', flag: 'r' })
     : '{}';    // {[appid]: POSSIBLE most recent update time}
@@ -256,6 +266,38 @@ function initializeSteamWebPipes() {
     ws.start();
 }
 initializeSteamWebPipes();
+
+// CHECK MEMORY INTERVAL
+setInterval(() => {
+    // Get the memory usage object from the Node.js process.
+    const memoryUsage = process.memoryUsage();
+
+    // Define constants for conversion.
+    const ONE_MB = 1024 * 1024;
+    const ONE_GB = 1024 * ONE_MB;
+
+    // The main metric to check for switching units is RSS.
+    const rssInMB = memoryUsage.rss / ONE_MB;
+
+    let unit = 'MB';
+    let divisor = ONE_MB;
+
+    // Check if RSS is over 1000 MB (approximately 1 GB).
+    if (rssInMB >= 1000) {
+        unit = 'GB';
+        divisor = ONE_GB;
+    }
+
+    // Helper function to convert bytes to the chosen unit and format the output.
+    const convertAndFormat = (bytes) => (bytes / divisor).toFixed(2);
+
+    console.log('\n--- Current RAM Usage ---');
+    console.log(`Resident Set Size (RSS): ${convertAndFormat(memoryUsage.rss)} ${unit}`);
+    console.log(`Heap Total: ${convertAndFormat(memoryUsage.heapTotal)} ${unit}`);
+    console.log(`Heap Used: ${convertAndFormat(memoryUsage.heapUsed)} ${unit}`);
+    console.log(`External: ${convertAndFormat(memoryUsage.external)} ${unit}`);
+    console.log('-------------------------\n');
+}, 5000)
 
 setInterval(() => {
     if (steamWepPipesProcess?.exitCode == null && steamWepPipesProcess.signalCode == null) {

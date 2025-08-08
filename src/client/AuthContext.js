@@ -176,17 +176,17 @@ export const AuthProvider = function ({ children }) {
         }
     }, []);
 
-    async function queueMostRecentUpdatesForGame({ appid, name }) {
-        if (appid == null) {
-            return null;
-        }
-        try {
-            await axios.post('/api/game-updates', { params: { appid } });
-        } catch (err) {
-            console.error(`Requesting info about ${appid} (${name}) updates failed.`, err);
-            return err;
-        }
-    }
+    // async function queueMostRecentUpdatesForGame({ appid, name }) {
+    //     if (appid == null) {
+    //         return null;
+    //     }
+    //     try {
+    //         await axios.post('/api/game-updates', { params: { appid } });
+    //     } catch (err) {
+    //         console.error(`Requesting info about ${appid} (${name}) updates failed.`, err);
+    //         return err;
+    //     }
+    // }
 
     // const executeWithDelay = async (calls, delayInMs = 1000) => {
     //     for (const call of calls) {
@@ -236,7 +236,7 @@ export const AuthProvider = function ({ children }) {
                 // 1. A map of apps that updated which was retrieved from Valve's PICS service
                 // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
                 const { appid, eventsLength, mostRecentEventTime, apps } = JSON.parse(event.data);
-                const gameRequests = [];
+                // const gameRequests = [];
                 if (apps != null) {
                     const appids = Object.keys(apps);
                     for (const appid of appids) {

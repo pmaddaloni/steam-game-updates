@@ -11,7 +11,7 @@ export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 // Break up a person's library request into chunks so as not to overwhelm the API.
-const REQUEST_SIZE = 100;
+const REQUEST_SIZE = 300;
 
 const FILTER_MAPPING = {
     major: [13, 14],
@@ -176,17 +176,53 @@ export const AuthProvider = function ({ children }) {
         }
     }, []);
 
-    function queueMostRecentUpdatesForGame({ appid, name }) {
+    async function queueMostRecentUpdatesForGame({ appid, name }) {
         if (appid == null) {
             return null;
         }
         try {
-            axios.post('/api/game-updates', { params: { appid } });
+            await axios.post('/api/game-updates', { params: { appid } });
         } catch (err) {
             console.error(`Requesting info about ${appid} (${name}) updates failed.`, err);
             return err;
         }
     }
+
+    // const executeWithDelay = async (calls, delayInMs = 1000) => {
+    //     for (const call of calls) {
+    //         try {
+    //             await call(); // Await the function call to ensure it completes
+    //         } catch (error) {
+    //             console.error('An error occurred during a queued call:', error);
+    //         }
+
+    //         // Wait for the specified delay before the next iteration
+    //         await new Promise(resolve => setTimeout(resolve, delayInMs));
+    //     }
+    //     console.log('All updates have been queued.');
+    // };
+
+    // const executeWithDelay = async (calls, delayInMs = 2000) => {
+    //     // Use reduce to chain the promises sequentially. The `Promise.resolve()` is the initial value.
+    //     await calls.reduce(async (previousPromise, currentCall) => {
+    //         // Wait for the previous promise (from the last iteration) to resolve.
+    //         await previousPromise;
+
+    //         // Execute the current call and await its completion.
+    //         try {
+    //             await currentCall();
+    //         } catch (error) {
+    //             console.error('An error occurred during a queued call:', error);
+    //         }
+
+    //         console.log(`--- Waiting for ${delayInMs / 1000} seconds before next call ---`);
+    //         // Return a new promise that resolves after the specified delay.
+    //         // This promise becomes the `previousPromise` for the next iteration.
+    //         return new Promise(resolve => setTimeout(resolve, delayInMs));
+    //     }, Promise.resolve()); // The starting point of our promise chain.
+
+    //     console.log('All updates have been queued.');
+    // };
 
     // Web socket setup
     useEffect(() => {
@@ -195,18 +231,20 @@ export const AuthProvider = function ({ children }) {
                 steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH);
                 steamGameUpdatesSocket.start();
             }
-            const onMessage = (event) => {
+            const onMessage = async (event) => {
                 // One of two types of messages is being received here:
                 // 1. A map of apps that updated which was retrieved from Valve's PICS service
                 // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
                 const { appid, eventsLength, mostRecentEventTime, apps } = JSON.parse(event.data);
+                const gameRequests = [];
                 if (apps != null) {
                     const appids = Object.keys(apps);
                     for (const appid of appids) {
                         if (state.ownedGames[appid] != null) {
-                            queueMostRecentUpdatesForGame({ appid, name: state.ownedGames[appid].name });
+                            // gameRequests.push((() => queueMostRecentUpdatesForGame({ appid, name: state.ownedGames[appid].name })));
                         }
                     }
+                    // executeWithDelay(gameRequests);
                 } else if (appid != null) {
                     const app = state.ownedGames[appid];
                     if (app != null && eventsLength > 0 && (app.events.length === 0 || app.events[0]?.posttime < mostRecentEventTime)) {

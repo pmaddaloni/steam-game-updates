@@ -4,6 +4,40 @@ import { debounce, getViableImageURL } from '../../utilities/utils';
 
 import styles from './body-styles.module.scss';
 
+function parseTableAttributes(bsCode) {
+    const closeTagMatch = bsCode.match(/^\[\/(.*?)]$/);
+    if (closeTagMatch) {
+        const tagName = closeTagMatch[1];
+        return `</${tagName}>`;
+    }
+    const tagMatch = bsCode.match(/^\[(\w+)(?:\s|\])/);
+    const tagName = tagMatch ? tagMatch[1].trim() : 'div';
+
+    const styleAttributes = {};
+    const attributeRegex = /(colwidth|rowwidth|colheight|rowheight)="([^"]*)"/g;
+    let match;
+
+    while ((match = attributeRegex.exec(bsCode)) !== null) {
+        const attributeName = match[1];
+        const attributeValue = match[2];
+
+        if (attributeName.includes('width')) {
+            styleAttributes.width = attributeValue;
+        } else if (attributeName.includes('height')) {
+            styleAttributes.height = attributeValue;
+        }
+    }
+
+    let styleString = '';
+    for (const key in styleAttributes) {
+        if (Object.prototype.hasOwnProperty.call(styleAttributes, key)) {
+            styleString += `${key}: ${styleAttributes[key]};`;
+        }
+    }
+
+    return `<${tagName} style="${styleString} background-color:${tagName === 'th' ? '#18396aff' : '#3d5f8eff'}; border: 1px solid #808080; padding: 8px;">`;
+};
+
 function formatTextToHtml(text) {
     let html = '';
     const lines = text.split('\n');
@@ -11,6 +45,7 @@ function formatTextToHtml(text) {
         let words = line.match(/\[.+?\]|\[\/.+\]|\S[^[]+/g);
         if (words != null) {
             let isImage = false;
+            let isTable = false;
             for (const word of words) {
                 if (word === '[b]') {
                     html += '<strong>';
@@ -129,6 +164,14 @@ function formatTextToHtml(text) {
                     html += '</div></details>';
                 } else if (word.startsWith('[carousel') || word === '[/carousel]') {
                     continue;
+                } else if (word.startsWith('[table')) {
+                    isTable = true;
+                    html += '<table style="border-collapse: collapse; border: 1px solid #808080;">';
+                } else if (isTable) {
+                    html += word.startsWith('[') ? parseTableAttributes(word) : word;
+                } else if (word === '[/table]') {
+                    isTable = true;
+                    html += '</table>';
                 } else {
                     html += (word ?? '') + ' ';
                 }

@@ -47,7 +47,12 @@ const processQueue = async () => {
 };
 
 onmessage = async ({ data: { appid, name } }) => {
+    if (requestQueue.some(({ appid: id }) => appid === id)) {
+        return;
+    }
+
     requestQueue.push((() => queueMostRecentUpdatesForGame({ appid, name })));
+
     if (!isProcessing) {
         processQueue();
     }

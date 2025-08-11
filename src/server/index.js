@@ -6,6 +6,7 @@ import express from 'express';
 import session from 'express-session';
 import fs from 'fs';
 import { createServer } from 'http';
+import os from 'os';
 import PQueue from 'p-queue';
 import passport from 'passport';
 import SteamStrategy from 'passport-steam';
@@ -271,6 +272,15 @@ initializeSteamWebPipes();
 setInterval(() => {
     // Get the memory usage object from the Node.js process.
     const memoryUsage = process.memoryUsage();
+    const totalMemoryBytes = os.totalmem();
+    const freeMemoryBytes = os.freemem();
+
+    const usedMemoryBytes = totalMemoryBytes - freeMemoryBytes;
+
+    // 1 GB = 1024 * 1024 * 1024 bytes
+    const totalMemoryGB = (totalMemoryBytes / (1024 * 1024 * 1024)).toFixed(2);
+    const freeMemoryGB = (freeMemoryBytes / (1024 * 1024 * 1024)).toFixed(2);
+    const usedMemoryGB = (usedMemoryBytes / (1024 * 1024 * 1024)).toFixed(2);
 
     // Define constants for conversion.
     const ONE_MB = 1024 * 1024;
@@ -292,6 +302,10 @@ setInterval(() => {
     const convertAndFormat = (bytes) => (bytes / divisor).toFixed(2);
 
     console.log('\n--- Current RAM Usage ---');
+    console.log(`System Total RAM: ${convertAndFormat(totalMemoryBytes)} ${unit}`);
+    console.log(`System Free RAM:  ${convertAndFormat(freeMemoryBytes)} ${unit}`);
+    console.log(`System Used RAM:  ${convertAndFormat(usedMemoryBytes)} ${unit}`);
+    console.log('---');
     console.log(`Resident Set Size (RSS): ${convertAndFormat(memoryUsage.rss)} ${unit}`);
     console.log(`Heap Total: ${convertAndFormat(memoryUsage.heapTotal)} ${unit}`);
     console.log(`Heap Used: ${convertAndFormat(memoryUsage.heapUsed)} ${unit}`);

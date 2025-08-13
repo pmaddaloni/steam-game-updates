@@ -185,32 +185,30 @@ export const AuthProvider = function ({ children }) {
     // Web socket setup
     useEffect(() => {
         if (state.id !== '') {
-            if (steamGameUpdatesSocket == null) {
-                const onMessage = async (event) => {
-                    // One of two types of messages is being received here:
-                    // 1. A map of apps that updated which was retrieved from Valve's PICS service
-                    // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
-                    const { appid, eventsLength, mostRecentEventTime } = JSON.parse(event.data);
-                    if (appid != null && state.ownedGames != null) {
-                        const app = state.ownedGames[appid];
-                        if (app != null && eventsLength > 0 && (app.events.length === 0 || app.events[0]?.posttime < mostRecentEventTime)) {
-                            // If the appid is present, it means a specific game has updated.
-                            // console.log(`Notified of ${eventsLength} update(s) for game ${appid} (${state.ownedGames[appid].name})`);
-                            const name = state.ownedGames[appid].name;
-                            const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
-                            notifyUser(name, icon, backupLogo);
-                        }
+            const onMessage = async (event) => {
+                // One of two types of messages is being received here:
+                // 1. A map of apps that updated which was retrieved from Valve's PICS service
+                // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
+                const { appid, name, usersToNotify } = JSON.parse(event.data);
+                if (appid != null && state.ownedGames != null) {
+                    if (usersToNotify.includes(state.id)) {
+                        const icon = state.ownedGames[appid] && `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
+                        notifyUser(name, icon, backupLogo);
                     }
-                    // If this is enabled, the list updates in real time.
-                    // The issue is that the list shifts around when a new game is added, which isn't ideal.
-                    // For now utilizing browser notifications to alert the user of updates instead.
-                    /*  else if (state.ownedGames[appid] != null && events?.length > 0) {
-                        dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name: state.ownedGames[appid].name, events } } });
-                        dispatch({ type: 'updateGameUpdates', value: [[mostRecentUpdateTime, appid]] });
-                    } */
                 }
+                // If this is enabled, the list updates in real time.
+                // The issue is that the list shifts around when a new game is added, which isn't ideal.
+                // For now utilizing browser notifications to alert the user of updates instead.
+                /*  else if (state.ownedGames[appid] != null && events?.length > 0) {
+                    dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name: state.ownedGames[appid].name, events } } });
+                    dispatch({ type: 'updateGameUpdates', value: [[mostRecentUpdateTime, appid]] });
+                } */
+            }
+            if (steamGameUpdatesSocket == null) {
                 steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH, { onMessage });
                 steamGameUpdatesSocket.start();
+            } else {
+                steamGameUpdatesSocket.updateOnMessage(onMessage);
             }
         }
     }, [state.id, state.ownedGames]);

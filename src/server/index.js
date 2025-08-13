@@ -616,15 +616,24 @@ const getGameUpdates = async (externalGameID) => {
                 if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
                     sendIndividualNotifications(gameID);
                     // let clients know a new update has been processed
-                    wss.clients.forEach(client => {
-                        if (client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({
-                                appid: gameID,
-                                eventsLength: mostRecentEvents.length,
-                                mostRecentEventTime
-                            }));
-                        }
-                    });
+                    if (app.locals.userOwnedGames[gameID] != null) {
+                        const usersToNotify = [...app.locals.userOwnedGames[gameID]]
+                            .filter(userId => userId.startsWith('web-client'))
+                            .map(userId => userId.replace('web-client-', ''));
+                        const name = app.locals.allSteamGameNames[gameID] || 'Unknown Game';
+
+                        wss.clients.forEach(client => {
+                            if (client.readyState === WebSocket.OPEN) {
+                                client.send(JSON.stringify({
+                                    appid: gameID,
+                                    name,
+                                    eventsLength: mostRecentEvents.length,
+                                    mostRecentEventTime,
+                                    usersToNotify
+                                }));
+                            }
+                        });
+                    }
                 }
                 console.log(`Getting the game ${gameID}'s updates completed with ${mostRecentEvents.length ?? 0} event(s), with ${DAILY_LIMIT - app.locals.dailyLimit} requests so far.`);
             } else if (result.status === 429 || result.status === 403) {

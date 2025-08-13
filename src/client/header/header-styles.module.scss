@@ -40,6 +40,10 @@ $menu-side-padding: 20px;
                     circle at center,
                     white 50%,
                     rgba(255, 255, 255, 0) 75%);
+
+            &+div {
+                min-width: 100px;
+            }
         }
 
         * {

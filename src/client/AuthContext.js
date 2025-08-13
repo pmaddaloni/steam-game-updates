@@ -12,7 +12,7 @@ export const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 // Break up a person's library request into chunks so as not to overwhelm the API.
-const REQUEST_SIZE = 300;
+const REQUEST_SIZE = 250;
 
 const FILTER_MAPPING = {
     major: [13, 14],
@@ -43,6 +43,7 @@ const defaultState = {
     loadingProgress: null,
     filters: [],
     menuFilters: [],
+    notificationsAllowed: false,
 };
 
 const reducer = (state, { type, value }) => {
@@ -52,6 +53,7 @@ const reducer = (state, { type, value }) => {
         case 'logout':
             localStorage.removeItem('steam-game-updates-user');
             localStorage.removeItem('steam-game-updates-filters');
+            localStorage.removeItem('steam-game-updates-notifications-allowed')
             axios.post('/api/logout', { id: state.id, ownedGames: state.ownedGames }, { withCredentials: true })
             return defaultState;
         case 'refreshGames':
@@ -106,6 +108,9 @@ const reducer = (state, { type, value }) => {
                 filterSet.add(FILTER_REVERSE_MAPPING[f]);
             })
             return { ...state, filters: value, menuFilters: [...filterSet] }
+        case 'setNotificationsAllowed':
+            localStorage.setItem('steam-game-updates-notifications-allowed', JSON.stringify(value));
+            return { ...state, notificationsAllowed: value }
         default: return state;
     };
 };
@@ -129,6 +134,11 @@ export const AuthProvider = function ({ children }) {
                     const parsedGameUpdatesFilters = JSON.parse(storedGameUpdatesFilters);
                     dispatch({ type: 'setFilters', value: parsedGameUpdatesFilters });
                 }
+                let storedNotificationsAllowed = await localStorage.getItem('steam-game-updates-notifications-allowed');
+                if (storedNotificationsAllowed != null) {
+                    const parsedNotificationsAllowed = JSON.parse(storedNotificationsAllowed);
+                    dispatch({ type: 'setNotificationsAllowed', value: parsedNotificationsAllowed });
+                }
             } else {
                 dispatch({ type: 'logout' })
             }
@@ -149,6 +159,7 @@ export const AuthProvider = function ({ children }) {
                 (async () => {
                     await localStorage.removeItem('steam-game-updates-user');
                     await localStorage.removeItem('steam-game-updates-filters');
+                    await localStorage.removeItem('steam-game-updates-notifications-allowed');
                 })();
                 console.log('User session has expired - need to log in.');
             }
@@ -186,23 +197,16 @@ export const AuthProvider = function ({ children }) {
     useEffect(() => {
         if (state.id !== '') {
             const onMessage = async (event) => {
-                // One of two types of messages is being received here:
-                // 1. A map of apps that updated which was retrieved from Valve's PICS service
-                // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
-                const { appid, name, usersToNotify } = JSON.parse(event.data);
-                if (appid != null && state.ownedGames != null) {
-                    if (usersToNotify.includes(state.id)) {
-                        const icon = state.ownedGames[appid] && `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
-                        notifyUser(name, icon, backupLogo);
+                // An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
+                if (state.notificationsAllowed) {
+                    const { appid, name, usersToNotify } = JSON.parse(event.data);
+                    if (appid != null && state.ownedGames != null) {
+                        if (usersToNotify.includes(state.id)) {
+                            const icon = state.ownedGames[appid] && `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
+                            notifyUser(name, icon, backupLogo);
+                        }
                     }
                 }
-                // If this is enabled, the list updates in real time.
-                // The issue is that the list shifts around when a new game is added, which isn't ideal.
-                // For now utilizing browser notifications to alert the user of updates instead.
-                /*  else if (state.ownedGames[appid] != null && events?.length > 0) {
-                    dispatch({ type: 'addOwnedGamesEvents', value: { [appid]: { name: state.ownedGames[appid].name, events } } });
-                    dispatch({ type: 'updateGameUpdates', value: [[mostRecentUpdateTime, appid]] });
-                } */
             }
             if (steamGameUpdatesSocket == null) {
                 steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH, { onMessage });
@@ -211,7 +215,7 @@ export const AuthProvider = function ({ children }) {
                 steamGameUpdatesSocket.updateOnMessage(onMessage);
             }
         }
-    }, [state.id, state.ownedGames]);
+    }, [state.id, state.notificationsAllowed, state.ownedGames]);
 
     const getAllUserOwnedGames = useCallback(async (userID = state.id) => {
         const result = await axios.get('api/owned-games', { params: { id: userID } });

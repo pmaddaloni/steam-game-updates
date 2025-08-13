@@ -77,7 +77,15 @@ const listItemSwitchProps = {
     width: 25,
     className: "react-switch",
     id: "material-switch",
+    onChange: () => null
 }
+
+const dividerStyle = {
+    height: '1px',
+    backgroundColor: 'rgb(128, 128, 128)',
+    margin: '10px 0',
+    width: '100%',
+};
 
 const listItemProps = {
     onMouseOver: e => {
@@ -105,11 +113,13 @@ const reducer = (state, filterToUpdate) => {
 }
 
 export default function Header() {
-    const { id: userID, displayName, photos, dispatch, menuFilters, loadingProgress } = useAuth();
+    const { notificationsAllowed, id: userID, displayName, photos, dispatch, menuFilters, loadingProgress } = useAuth();
     const [interactionDisabled, setInteractionDisabled] = useState(true);
+    const [allowNotifications, setAllowNotifications] = useState(notificationsAllowed);
     const [isPopoverOpen, setIsOpen] = useState(false);
     const [filters, filtersDispatch] = useReducer(reducer, defaultFilters)
     const dispatchFilterChanges = type => dispatch({ type: 'updateFilters', value: type });
+
 
     useEffect(() => {
         (menuFilters).forEach(f => filtersDispatch(f))
@@ -118,6 +128,13 @@ export default function Header() {
     useEffect(() => {
         setInteractionDisabled(loadingProgress < 100);
     }, [loadingProgress])
+
+    useEffect(() => {
+        if (notificationsAllowed !== allowNotifications) {
+            setAllowNotifications(notificationsAllowed);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [notificationsAllowed]);
 
     useEffect(() => {
         function handleKeyDown(event) {
@@ -265,6 +282,29 @@ export default function Header() {
                                 id="popover-menu"
                                 style={{ ...popoverStyle }}
                             >
+                                <li style={listItemStyle}
+                                    onClick={() => {
+                                        let allow = !allowNotifications;
+                                        if (allow && Notification.permission === "default") {
+                                            Notification.requestPermission().then((permission) => {
+                                                allow = permission === "granted";
+                                            });
+                                        } else if (allow && Notification.permission === "denied") {
+                                            window.alert("You have denied notifications. Please enable them in your browser settings to receive updates.");
+                                            allow = false;
+                                        }
+                                        setAllowNotifications(allow);
+                                        dispatch({ type: 'setNotificationsAllowed', value: allow });
+                                    }}
+                                    {...listItemProps}
+                                >
+                                    Allow notifications
+                                    <Switch
+                                        checked={allowNotifications}
+                                        {...listItemSwitchProps}
+                                    />
+                                </li>
+                                <li style={{ ...dividerStyle }} />
                                 <li style={{
                                     fontSize: '12px',
                                     fontWeight: 'bold',
@@ -309,7 +349,6 @@ export default function Header() {
                                     Major Updates
                                     <Switch
                                         checked={filters.major}
-                                        onChange={() => null}
                                         {...listItemSwitchProps}
                                     />
                                 </li>
@@ -323,7 +362,6 @@ export default function Header() {
                                     Minor Updates
                                     <Switch
                                         checked={filters.minor}
-                                        onChange={() => null}
                                         {...listItemSwitchProps}
                                     />
                                 </li>
@@ -337,7 +375,6 @@ export default function Header() {
                                     Game Events
                                     <Switch
                                         checked={filters.gameEvents}
-                                        onChange={() => null}
                                         {...listItemSwitchProps}
                                     />
                                 </li>
@@ -350,7 +387,6 @@ export default function Header() {
                                 >News Events
                                     <Switch
                                         checked={filters.newsEvents}
-                                        onChange={() => null}
                                         {...listItemSwitchProps}
                                     />
                                 </li>
@@ -364,11 +400,11 @@ export default function Header() {
                                     Cross Posts
                                     <Switch
                                         checked={filters.crossPosts}
-                                        onChange={() => null}
                                         {...listItemSwitchProps} />
                                 </li>
+                                <li style={{ ...dividerStyle }} />
                                 <li
-                                    style={{ ...listItemStyle, marginTop: '25px', display: 'flex', justifyContent: 'space-between', cursor: 'default' }}
+                                    style={{ ...listItemStyle, display: 'flex', justifyContent: 'space-between', cursor: 'default' }}
                                 >
                                     <div
                                         style={{ transition: 'color 300ms' }}

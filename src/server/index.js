@@ -179,7 +179,12 @@ app.locals.steamGameDetails = JSON.parse(steamGameDetails);
 app.locals.allSteamGamesUpdatesPossiblyChanged = JSON.parse(allSteamGamesUpdatesPossiblyChangedFromFile);
 app.locals.gameIDsToCheckIndex = parseInt(JSON.parse(gameIDsToCheckIndex));
 app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
-app.locals.userOwnedGames = JSON.parse(userOwnedGames);
+const parsedUserOwnedGames = JSON.parse(userOwnedGames);
+const objectWithSets = Object.entries(parsedUserOwnedGames).reduce((acc, [key, value]) => {
+    acc[key] = new Set(value);
+    return acc;
+}, {});
+app.locals.userOwnedGames = JSON.parse(objectWithSets);
 app.locals.waitBeforeRetrying = false;
 const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
 app.locals.dailyLimit = lastDailyLimitUsage;

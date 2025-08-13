@@ -219,7 +219,7 @@ const ONE_SIGNAL_REST_API_KEY = config.ONE_SIGNAL_REST_API_KEY;
 
 async function sendIndividualNotifications(appid) {
     if (app.locals.userOwnedGames[appid] != null) {
-        const usersToNotify = [...app.locals.userOwnedGames[appid]].filter(userId => userId.startsWith('web-client') === false);
+        const usersToNotify = [...app.locals.userOwnedGames[appid]].filter(userId => userId?.startsWith('web-client') === false);
         if (usersToNotify.length === 0) {
             return;
         }
@@ -858,6 +858,29 @@ app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
     res.sendStatus(200);
 });
 
+const notificationUnsubscribe = (req) => {
+    const userID = req.body.id || req.user?.id;
+    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    for (const gameID of gameIDs) {
+        if (app.locals.userOwnedGames[gameID] != null) {
+            app.locals.userOwnedGames[gameID].delete(userID);
+        }
+    }
+};
+
+const notificationSubscribe = (req) => {
+    const userID = req.body.id || req.user?.id;
+    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    for (const gameID of gameIDs) {
+        if (userID != null) {
+            if (app.locals.userOwnedGames[gameID] == null) {
+                app.locals.userOwnedGames[gameID] = new Set();
+            }
+            app.locals.userOwnedGames[gameID].add(userID);
+        }
+    }
+};
+
 // create a temp map entry with the UUID from POST
 // lookup all entries and then store in map
 // create a GET endpoint that returns paginated results
@@ -865,20 +888,17 @@ app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
 const tempMap = {};
 app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
-    const userID = req.body.id || req.user?.id;
-
     const requestID = req.body.request_id;
+
     if (requestID == null) {
         res.sendStatus(406);
         return;
     }
+    notificationSubscribe(req);
+
     const updates = {}; // {appid: gameID, events: []}
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
-        if (app.locals.userOwnedGames[gameID] == null) {
-            app.locals.userOwnedGames[gameID] = new Set();
-        }
-        app.locals.userOwnedGames[gameID].add(userID);
         // (The gameID is the second element in the array)
         const events = await getRedisValue(gameID);
         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
@@ -963,16 +983,12 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
 
 app.post('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req, res) => {
     const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
-    const userID = req.body.user_id || req.user?.id;
-
     const lastCheckTime = parseInt(req.query.last_check_time)   // this is ms
     const gameIDsWithUpdates = [];
+    notificationSubscribe(req);
+
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
-        if (app.locals.userOwnedGames[gameID] == null) {
-            app.locals.userOwnedGames[gameID] = new Set();
-        }
-        app.locals.userOwnedGames[gameID].add(userID);
         // const events = app.locals.allSteamGamesUpdates[gameID];
         const events = await getRedisValue(gameID);
         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
@@ -1028,14 +1044,29 @@ app.post('/api/logout', function (req, res) {
     } else if (app.locals.mobileSessions.has(req.headers['session-id'])) {
         app.locals.mobileSessions.delete(req.headers['session-id']);
     }
-    const userID = req.body.user_id || req.user?.id;
-    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
-    for (const gameID of gameIDs) {
-        if (app.locals.userOwnedGames[gameID] != null) {
-            app.locals.userOwnedGames[gameID].delete(userID);
-        }
-    }
+
+    notificationUnsubscribe(req);
     res.sendStatus(200);
+});
+
+app.post('/api/notification-unsubscribe', ensureAuthenticated, function (req, res) {
+    try {
+        notificationUnsubscribe(req);
+        res.sendStatus(200);
+    } catch (err) {
+        console.error('Error unsubscribing from notifications:', err);
+        res.status(500).send(new Error('Failed to unsubscribe from notifications'));
+    }
+});
+
+app.post('api/notification-subscribe', ensureAuthenticated, async (req, res) => {
+    try {
+        notificationSubscribe(req);
+        res.sendStatus(200);
+    } catch (err) {
+        console.error('Error subscribing to notifications:', err);
+        res.status(500).send(new Error('Failed to subscribe to notifications'));
+    }
 });
 
 app.get('/api/login/ios', function (req, res) {

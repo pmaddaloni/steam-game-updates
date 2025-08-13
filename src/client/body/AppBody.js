@@ -55,6 +55,20 @@ export default function Body() {
     }, [filters, ownedGames]);
 
     useEffect(() => {
+        if (gameComponents.length !== 0) {
+            const isWindows = navigator.userAgent.startsWith('Win');
+            const gameList = document.getElementById('game-list');
+            if (gameList) {
+                gameList.classList.add(isWindows ? 'os-windows' : 'os-mac');
+            }
+            const gameContainer = document.getElementById('game-container');
+            if (gameContainer) {
+                gameContainer.classList.add(isWindows ? 'os-windows' : 'os-mac');
+            }
+        }
+    }, [gameComponents.length]);
+
+    useEffect(() => {
         setSelectedGame(null);
         const newComponents = createGameComponents(filteredList ?? gameUpdates);
         setGameComponents(newComponents);
@@ -215,7 +229,7 @@ export default function Body() {
                                 />
                             )}
                         </div>
-                        <div className={styles['update-container']}>
+                        <div id="update-container" className={styles['update-container']}>
                             <div className={styles["container-header"]}>
                                 <div className={styles['update']}>Update</div>
                             </div>

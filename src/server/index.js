@@ -184,7 +184,7 @@ const objectWithSets = Object.entries(parsedUserOwnedGames).reduce((acc, [key, v
     acc[key] = new Set(value);
     return acc;
 }, {});
-app.locals.userOwnedGames = JSON.parse(objectWithSets);
+app.locals.userOwnedGames = objectWithSets;
 app.locals.waitBeforeRetrying = false;
 const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
 app.locals.dailyLimit = lastDailyLimitUsage;

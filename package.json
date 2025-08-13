@@ -17,6 +17,7 @@
     "express-session": "^1.18.1",
     "html-react-parser": "^5.2.3",
     "https": "^1.0.0",
+    "ioredis": "^5.7.0",
     "mysql2": "^3.14.1",
     "p-queue": "^8.1.0",
     "passport": "^0.7.0",

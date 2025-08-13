@@ -10,7 +10,7 @@ axios.defaults.baseURL = self.location.host.includes('steamgameupdates.info') ?
 // https://create-react-app.dev/docs/adding-custom-environment-variables/#adding-development-environment-variables-in-env
 axios.defaults.withCredentials = true;
 
-onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize } }) => {
+onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize, id } }) => {
     let ownedGamesWithoutUpdates = { ...ownedGames };
     let numberOfRequestsSoFar = 1;
     // Remove games that didn't get a name.
@@ -30,7 +30,7 @@ onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize } })
         // after the first page returns, emit a result to the main thread but instead of overriding, append on to it.
         // Need to fetch all of them up front, not incrementally
         // because you don't know where the most recently updated game is in the list...
-        let result = await axios.post('/api/beta/game-updates-for-owned-games', { appids: gameIDs, request_id: requestID });
+        let result = await axios.post('/api/beta/game-updates-for-owned-games', { appids: gameIDs, request_id: requestID, id });
         const { gameUpdatesIDs } = result.data;
         postMessage({ gameUpdatesIDs });
         postMessage({ loadingProgress: (++numberOfRequestsSoFar / totalNumberOfRequests) * 100 });

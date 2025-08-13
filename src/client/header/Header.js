@@ -171,9 +171,7 @@ export default function Header() {
 
     const logout = () => {
         if (window.confirm('Are you sure you want to log out?')) {
-            localStorage.removeItem('steam-game-updates-user');
             dispatch({ type: 'logout' });
-            axios.post('/api/logout', {}, { withCredentials: true })
         }
     };
 

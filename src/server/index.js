@@ -6,7 +6,7 @@ import express from 'express';
 import session from 'express-session';
 import fs from 'fs';
 import { createServer } from 'http';
-import os from 'os';
+import Redis from 'ioredis'; // Changed from 'redis' to 'ioredis'
 import PQueue from 'p-queue';
 import passport from 'passport';
 import SteamStrategy from 'passport-steam';
@@ -19,9 +19,10 @@ import WebSocket, { WebSocketServer } from 'ws';
 // import SteamStrategy from 'modern-passport-steam';
 
 import config from '../../config.js';
-import { PriorityQueue, createWebSocketConnector } from '../utilities/utils.js';
+import { PriorityQueue, createWebSocketConnector, getViableImageURL } from '../utilities/utils.js';
 
 const environment = config.ENVIRONMENT || 'development'; // Default to 'development' if not set
+const PORT = process.env.PORT || 8080;
 
 const __filename = fileURLToPath(import.meta.url);  // get the resolved path to the file
 const __dirname = path.dirname(__filename);         // get the name of the directory
@@ -39,6 +40,20 @@ if (environment !== 'development') {
 } else {
     console.clear();
 }
+
+// --- ioredis Client Setup ---
+// The ioredis client connects automatically, so no need for an explicit connect() call.
+const redisClient = new Redis(config.REDIS_URL || 'redis://localhost:6379');
+
+redisClient.on('error', (err) => console.error('ioredis Client Error', err));
+
+console.log('ioRedis client initialized. Connecting to Redis server...');
+
+// --- Data Loading from Redis ---
+const getRedisValue = async (field, key = 'allSteamGamesUpdates') => {
+    const value = await redisClient.hget(key, field);
+    return value ? JSON.parse(value) : null;
+};
 
 // Passport session setup.
 //   To support persistent login sessions, Passport needs to be able to
@@ -98,42 +113,7 @@ if (!fs.existsSync(passportSessionsDirectoryPath)) {
         process.exit(1);
     }
 }
-
-const allSteamGameUpdatesDirectoryPath = path.join(__dirname, './storage/all-steam-game-updates');
-if (!fs.existsSync(allSteamGameUpdatesDirectoryPath)) {
-    try {
-        fs.mkdirSync(allSteamGameUpdatesDirectoryPath, { recursive: true });
-        console.log(`Directory '${allSteamGameUpdatesDirectoryPath}' created successfully.`);
-    } catch (err) {
-        console.error('Error creating directory. Must abort application and fix - check permissions.', err);
-        process.exit(1);
-    }
-}
 // End storage folders.
-
-let gameUpdatesFromFile = {};   // {[appid]: events[]}
-let totalSizeLoaded = 0;
-fs.readdirSync(allSteamGameUpdatesDirectoryPath).forEach(fileName => {
-    console.log(fileName)
-    if (path.extname(fileName) === '.json') {
-        const oneMB = 1024 * 1024;
-        try {
-            const filePath = `${allSteamGameUpdatesDirectoryPath}/${fileName}`;
-            const stats = fs.statSync(filePath);
-            const fileSizeInMB = (stats.size / oneMB).toFixed(2);
-            totalSizeLoaded += Number(fileSizeInMB);
-            console.log(`Loading file ${fileName} of ${fileSizeInMB}, loaded a total of ` +
-                `${(totalSizeLoaded > 1000 ?
-                    `${(totalSizeLoaded / 1000).toFixed(2)} GB` :
-                    `${totalSizeLoaded.toFixed(2)} MB`)}`);
-            const result = fs.readFileSync(filePath, { encoding: 'utf8', flag: 'r' }) || '{}';
-            const parsedResult = JSON.parse(result);
-            gameUpdatesFromFile = { ...gameUpdatesFromFile, ...parsedResult };
-        } catch (e) {
-            console.error(`failure reading file ${fileName}.json`, e);
-        }
-    }
-});
 
 const allSteamGamesUpdatesPossiblyChangedFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json'), { encoding: 'utf8', flag: 'r' })
@@ -153,8 +133,7 @@ const serverRefreshTimeAndCount = fs.existsSync(path.join(__dirname, './storage/
 const mobileSessions = fs.existsSync(path.join(__dirname, './storage/mobileSessions.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/mobileSessions.json'), { encoding: 'utf8', flag: 'r' })
     : '[]';    // [ sessionID-1, sessionID-2, ... ]
-const userOwnedGames = environment === 'development' &&
-    fs.existsSync(path.join(__dirname, './storage/userOwnedGames.json')) ?
+const userOwnedGames = fs.existsSync(path.join(__dirname, './storage/userOwnedGames.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/userOwnedGames.json'), { encoding: 'utf8', flag: 'r' })
     : '{}';
 
@@ -175,7 +154,7 @@ async function getAllSteamGameNames() {
     ).then((result) => {
         // disregard apps without a name
         let games = result.data.applist.apps.filter(app => app.name !== '');//.sort((a, b) => a.appid - b.appid);
-        const gameHash = games.reduce((acc, game) => {
+        const gameNamesDict = games.reduce((acc, game) => {
             acc[game.appid] = game.name;
             return acc;
         }, {});
@@ -184,22 +163,23 @@ async function getAllSteamGameNames() {
         games = Array.from(new Set(games.map(a => a.appid)));
         games = games.map((appid) => ({
             appid,
-            name: gameHash[appid]
         }));
         console.log(`Server has retrieved ${games.length} games`);
-        return games;
+        return { gameAppidsArray: games, gameNamesDict };
     }).catch(err => {
         console.error('Retrieving all games from Steam API failed.', err);
     })
 }
 
-app.locals.allSteamGames = await getAllSteamGameNames();
-app.locals.allSteamGamesUpdates = gameUpdatesFromFile;
+const { gameAppidsArray, gameNamesDict } = await getAllSteamGameNames();
+app.locals.allSteamGames = gameAppidsArray;
+// app.locals.allSteamGamesUpdates = allSteamGamesUpdates;
+app.locals.allSteamGameNames = gameNamesDict;
 app.locals.steamGameDetails = JSON.parse(steamGameDetails);
 app.locals.allSteamGamesUpdatesPossiblyChanged = JSON.parse(allSteamGamesUpdatesPossiblyChangedFromFile);
 app.locals.gameIDsToCheckIndex = parseInt(JSON.parse(gameIDsToCheckIndex));
 app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
-app.locals.userOwnedGames = environment === 'development' ? JSON.parse(userOwnedGames) : null;
+app.locals.userOwnedGames = JSON.parse(userOwnedGames);
 app.locals.waitBeforeRetrying = false;
 const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
 app.locals.dailyLimit = lastDailyLimitUsage;
@@ -207,6 +187,7 @@ app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
 // Since passport isn't properly tracking mobile sessions, we need to track them ourselves.
 // We generate our own UUIDs to check against for the mobile app.
 app.locals.mobileSessions = new Set(JSON.parse(mobileSessions));
+app.locals.subscribedUsers = {};
 
 // START Steam Game Updates WebSocket connection
 const webSocketServerOptions = { noServer: true };
@@ -225,13 +206,69 @@ wss.on('connection', function connection(ws, request) {
         console.log('Client disconnected');
     });
 });
-// END Steam Game Updates WebSocket co0
-// nection
+// END Steam Game Updates WebSocket connection
+
+// --- OneSignal Configuration ---
+const ONE_SIGNAL_APP_ID = config.ONE_SIGNAL_APP_ID;
+const ONE_SIGNAL_REST_API_KEY = config.ONE_SIGNAL_REST_API_KEY;
+
+async function sendIndividualNotifications(appid) {
+    if (app.locals.userOwnedGames[appid] != null) {
+        const usersToNotify = [...app.locals.userOwnedGames[appid]].filter(userId => !userId.startWith('web-client'));
+        try {
+            const name = app.locals.allSteamGameNames[appid];
+            const icons = [
+                `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/capsule_616x353.jpg`,
+                `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/logo.png`,
+                `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`,
+                `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg`,
+                // `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${ownedGames[appid].img_logo_url}.jpg`,
+                // `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${ownedGames[appid].img_icon_url}.jpg`
+                'api'
+            ]
+            const fullUrl = `http://localhost:${PORT}/api/game-details`;
+            const validImageURL = await getViableImageURL(icons, 'id', appid, name, fullUrl);
+            console.log('\nNotification sent to users for app:', appid, name, validImageURL, '\n');
+
+            const notification = {
+                app_id: ONE_SIGNAL_APP_ID,
+                target_channel: "push",
+                contents: {
+                    'en': `New Update for ${name} available. Refresh your game list to see it.`,
+                },
+                // headings: {
+                //     'en': `PC Game Updates`,
+                // },
+                ios_attachments: {
+                    id: validImageURL
+                },
+                "include_aliases": {
+                    "external_id": usersToNotify
+                },
+                ios_badgeType: 'Increase',
+                ios_badgeCount: 1,
+            }
+            await axios.post(
+                'https://onesignal.com/api/v1/notifications?c=push',
+                notification,
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Key ${ONE_SIGNAL_REST_API_KEY}`,
+                    },
+                }
+            );
+        } catch (error) {
+            console.error(`Error sending notification to users for app ${appid}:`, error.response ? error.response.data : error.message);
+        }
+    }
+}
+// End OneSignal client configuration
 
 // Spin up SteamWebPipes server
 const MEMORY_LIMIT_MB = 100;
 const MEMORY_LIMIT_BYTES = MEMORY_LIMIT_MB * 1024 * 1024;
-const MONITOR_INTERVAL_MS = 15000; // Check every 15 seconds
+const MONITOR_INTERVAL_MS = 30000; // Check every 30 seconds
 
 let steamWepPipesProcess = null
 let ws = null;
@@ -247,17 +284,13 @@ function initializeSteamWebPipes() {
             if (apps == null) {
                 return;
             }
-            // broadcast the PICS update message to all connected clients
-            wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify({
-                        apps
-                    }));
-                }
-            });
             const appids = Object.keys(apps);
             for (const appid of appids) {
                 app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime() / 1000; // convert to seconds from ms
+                // If at least one subscribed user owns the game, we should check it.
+                if (app.locals.userOwnedGames[appid]?.size > 0) {
+                    app.locals.gameIDsToCheckPriorityQueue.enqueue(appid, app.locals.allSteamGamesUpdatesPossiblyChanged[appid]);
+                }
             }
         },
         onClose: () => console.log('Disconnected from SteamWebPipes server'),
@@ -269,18 +302,13 @@ function initializeSteamWebPipes() {
 initializeSteamWebPipes();
 
 // CHECK MEMORY INTERVAL
-setInterval(() => {
+/* setInterval(() => {
     // Get the memory usage object from the Node.js process.
     const memoryUsage = process.memoryUsage();
     const totalMemoryBytes = os.totalmem();
     const freeMemoryBytes = os.freemem();
 
     const usedMemoryBytes = totalMemoryBytes - freeMemoryBytes;
-
-    // 1 GB = 1024 * 1024 * 1024 bytes
-    const totalMemoryGB = (totalMemoryBytes / (1024 * 1024 * 1024)).toFixed(2);
-    const freeMemoryGB = (freeMemoryBytes / (1024 * 1024 * 1024)).toFixed(2);
-    const usedMemoryGB = (usedMemoryBytes / (1024 * 1024 * 1024)).toFixed(2);
 
     // Define constants for conversion.
     const ONE_MB = 1024 * 1024;
@@ -297,8 +325,6 @@ setInterval(() => {
         unit = 'GB';
         divisor = ONE_GB;
     }
-
-    // Helper function to convert bytes to the chosen unit and format the output.
     const convertAndFormat = (bytes) => (bytes / divisor).toFixed(2);
 
     console.log('\n--- Current RAM Usage ---');
@@ -311,15 +337,15 @@ setInterval(() => {
     console.log(`Heap Used: ${convertAndFormat(memoryUsage.heapUsed)} ${unit}`);
     console.log(`External: ${convertAndFormat(memoryUsage.external)} ${unit}`);
     console.log('-------------------------\n');
-}, 5000)
+}, 5000) */
 
 setInterval(() => {
     if (steamWepPipesProcess?.exitCode == null && steamWepPipesProcess.signalCode == null) {
         pidusage(steamWepPipesProcess.pid)
             .then(stats => {
                 // stats.memory is in bytes (RSS - Resident Set Size)
-                const memoryMB = stats.memory / (1024 * 1024);
-                console.log(`SteamWebPipes process (PID: ${steamWepPipesProcess.pid}) memory usage: ${memoryMB.toFixed(2)} MB`);
+                // const memoryMB = stats.memory / (1024 * 1024);
+                // console.log(`SteamWebPipes process (PID: ${steamWepPipesProcess.pid}) memory usage: ${memoryMB.toFixed(2)} MB`);
 
                 if (stats.memory > MEMORY_LIMIT_BYTES) {
                     console.warn(`SteamWebPipes process (PID: ${steamWepPipesProcess.pid}) exceeded memory limit (${MEMORY_LIMIT_MB} MB). Killing it.`);
@@ -479,7 +505,7 @@ async function getGameIDUpdates(
 }
 
 console.log(`Server last refreshed on ${new Date(app.locals.lastServerRefreshTime)} with ${app.locals.dailyLimit} requests left`);
-console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates).length} games with their updates.`);
+// console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates).length} games with their updates.`);
 
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
@@ -525,10 +551,11 @@ setInterval(() => {
 setInterval(async () => {
     console.log('Refreshing all games');
     if (app.locals.dailyLimit > 0 && app.locals.waitBeforeRetrying === false) {
-        getAllSteamGameNames().then(allGames => {
+        getAllSteamGameNames().then(({ gameAppidsArray, gameNamesDict }) => {
             app.locals.dailyLimit--;
-            if (allGames) {
-                app.locals.allSteamGames = allGames;
+            if (gameAppidsArray) {
+                app.locals.allSteamGames = gameAppidsArray;
+                app.locals.allSteamGameNames = gameNamesDict;
             } else {
                 app.locals.waitBeforeRetrying = true;
                 setTimeout(() => app.locals.waitBeforeRetrying = false, RETRY_WAIT_TIME);
@@ -569,31 +596,35 @@ const getGameUpdates = async (externalGameID) => {
                     app.locals.gameIDsToCheckIndex++;
                 }
 
-                // To keep track of the most recent 10 updates - .slice(0, 10)
+                // To keep track of the most recent 10 updates -> .slice(0, 10)
                 const mostRecentEvents = result.events.map(event => {
                     const { posttime, body, gid, headline } = event.announcement_body;
                     return { posttime, body, gid, headline, event_type: event.event_type };
                 });
                 const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0);
-                const mostRecentPreviouslyKnownEventTime = (app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0);
+                const mostRecentPreviouslyKnownEventTime = await getRedisValue(gameID)?.[0]?.posttime ?? 0;
+
+                // const mostRecentPreviouslyKnownEventTime = (app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0);
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
 
-                app.locals.allSteamGamesUpdates[gameID] = mostRecentEvents;
+                // app.locals.allSteamGamesUpdates[gameID] = mostRecentEvents;
+                await redisClient.hset('allSteamGamesUpdates', gameID, JSON.stringify(mostRecentEvents));
                 if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
+                    sendIndividualNotifications(gameID);
                     // let clients know a new update has been processed
                     wss.clients.forEach(client => {
                         if (client.readyState === WebSocket.OPEN) {
                             client.send(JSON.stringify({
                                 appid: gameID,
-                                eventsLength: app.locals.allSteamGamesUpdates[gameID]?.length,
+                                eventsLength: mostRecentEvents.length,
                                 mostRecentEventTime
                             }));
                         }
                     });
                 }
-                console.log(`Getting the game ${gameID}'s updates completed with ${app.locals.allSteamGamesUpdates[gameID]?.length ?? 0} event(s), with ${DAILY_LIMIT - app.locals.dailyLimit} requests so far.`);
+                console.log(`Getting the game ${gameID}'s updates completed with ${mostRecentEvents.length ?? 0} event(s), with ${DAILY_LIMIT - app.locals.dailyLimit} requests so far.`);
             } else if (result.status === 429 || result.status === 403) {
                 if (result.status === 429 || result.retryAfter != null) {
                     app.locals.waitBeforeRetrying = true;
@@ -630,8 +661,7 @@ const getGameUpdates = async (externalGameID) => {
 setInterval(getGameUpdates, REQUEST_WAIT_TIME);
 
 // FILE WRITE
-// Save the results every five minute so we don't lose them if the server restarts/crashes.
-// Write to file for now, but future optimization could be to use something like mongo db.
+// Save the results every 30 minute so we don't lose them if the server restarts/crashes.
 setInterval(async () => {
     // We may as well stop saving the files if the daily limit is 0 so we don't keep writing
     // the same data over and over again.
@@ -642,23 +672,7 @@ setInterval(async () => {
         }
 
         const fileWriterSend = initializeFileWriterProcess(); // Initialize the child process on server start
-        const entries = Object.entries(app.locals.allSteamGamesUpdates);
-        const chunkSize = 1000;
         try {
-            for (let i = 0; i < entries.length; i += chunkSize) {
-                const nextChunk = i + chunkSize;
-                const subsetOfGames = entries.slice(i, nextChunk);
-                const chunk = Object.fromEntries(subsetOfGames)
-                const filename = `allSteamGamesUpdates-${nextChunk}.json`;
-                await fileWriterSend({
-                    type: 'writeFile',
-                    payload: {
-                        filename,
-                        data: chunk,
-                        directory: path.join(__dirname, './storage/all-steam-game-updates')
-                    }
-                });
-            }
             await fileWriterSend({
                 type: 'writeFile',
                 payload: {
@@ -703,12 +717,15 @@ setInterval(async () => {
                     data: Array.from(app.locals.mobileSessions),
                 }
             });
-            if (environment === 'development' && app.locals.userOwnedGames) {
+            if (app.locals.userOwnedGames) {
                 await fileWriterSend({
                     type: 'writeFile',
                     payload: {
                         filename: './storage/userOwnedGames.json',
-                        data: app.locals.userOwnedGames,
+                        data: Object.entries(app.locals.userOwnedGames).reduce((acc, [key, value]) => {
+                            acc[key] = Array.from(value);
+                            return acc;
+                        }, {}),
                     }
                 });
             }
@@ -790,13 +807,6 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
         if (!userID) {
             return res.status(400).send(new Error('No user ID provided'));
         }
-        const useLocal = req.query.use_local === 'true';
-        // If we just want to use what has been retrieved previously so as not to constantly hit
-        // Steam's API:
-        if (useLocal && environment === 'development') {
-            console.log(`Using locally stored games for user ${userID}; sending ${app.locals.userOwnedGames[userID]?.length ?? 0} games`);
-            return res.send({ games: app.locals.userOwnedGames[userID] });
-        }
 
         //  If a user has requested their games we need to process it asap.
         await app.locals.requestQueue.add(
@@ -812,9 +822,6 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
             });
         app.locals.dailyLimit--;
         console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count ?? 'no'} games`);
-        if (environment === 'development') {
-            app.locals.userOwnedGames[userID] = result.data?.response?.games ?? [];
-        }
         res.send(result.data?.response);
     } else {
         res.status(400).send(new Error(`The limit for requests has been reached: retry later ${req.app.locals.waitBeforeRetrying}, daily limit ${req.app.locals.dailyLimit}`));
@@ -831,18 +838,8 @@ app.get('/api/update-queue', ensureAuthenticated, async (req, res) => {
 
 app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
     const gameID = req.query.appid;
-    app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, 100); // Give this request a high priority
+    app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, 9999999999); // Give this request a high priority
     res.sendStatus(200);
-    // This is part of the code that can trigger automatic updates on the client side.
-    // possibly from a GET route that could be implemented.
-    // if (!req.app.locals.gameIDsWithErrors.has(gameID)) {
-    //     await getGameUpdates(gameID);
-    // }
-    // if (app.locals.gameIDsWithErrors.has(gameID)) {
-    //     res.send([]);   // This game doesn't have updates
-    // } else {
-    //     res.send(app.locals.allSteamGamesUpdates[gameID]);
-    // }
 });
 
 // create a temp map entry with the UUID from POST
@@ -852,6 +849,8 @@ app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
 const tempMap = {};
 app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    const userID = req.body.id || req.user?.id;
+
     const requestID = req.body.request_id;
     if (requestID == null) {
         res.sendStatus(406);
@@ -860,8 +859,13 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
     const updates = {}; // {appid: gameID, events: []}
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
+        console.log(userID)
+        if (app.locals.userOwnedGames[gameID] == null) {
+            app.locals.userOwnedGames[gameID] = new Set();
+        }
+        app.locals.userOwnedGames[gameID].add(userID);
         // (The gameID is the second element in the array)
-        const events = app.locals.allSteamGamesUpdates[gameID];
+        const events = await getRedisValue(gameID);
         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
             app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
@@ -920,34 +924,42 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
     }
 });
 
-app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID, 10));
-    const updates = []; // An array of {appid: gameID, events: []} in order of most recently updated
-    // Iterate through all passed in games and add them if found
-    for (const gameID of gameIDs) {
-        // (The gameID is the second element in the array)
-        const events = app.locals.allSteamGamesUpdates[gameID];
-        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
-            // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
-            app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
-        }
-        updates.push(
-            {
-                appid: gameID,
-                events,
-            }
-        );
-    }
-    res.send({ updates });
-});
+// app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
+//     const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID, 10));
+//     const updates = []; // An array of {appid: gameID, events: []} in order of most recently updated
+//     // Iterate through all passed in games and add them if found
+//     for (const gameID of gameIDs) {
+//         // (The gameID is the second element in the array)
+//         // const events = app.locals.allSteamGamesUpdates[gameID];
+//         const events = await getRedisValue(gameID);
+//         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
+//             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
+//             app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
+//         }
+//         updates.push(
+//             {
+//                 appid: gameID,
+//                 events,
+//             }
+//         );
+//     }
+//     res.send({ updates });
+// });
 
 app.post('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req, res) => {
     const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    const userID = req.body.user_id || req.user?.id;
+
     const lastCheckTime = parseInt(req.query.last_check_time)   // this is ms
     const gameIDsWithUpdates = [];
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
-        const events = app.locals.allSteamGamesUpdates[gameID];
+        if (app.locals.userOwnedGames[gameID] == null) {
+            app.locals.userOwnedGames[gameID] = new Set();
+        }
+        app.locals.userOwnedGames[gameID].add(userID);
+        // const events = app.locals.allSteamGamesUpdates[gameID];
+        const events = await getRedisValue(gameID);
         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
             app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
         }
@@ -1001,6 +1013,13 @@ app.post('/api/logout', function (req, res) {
     } else if (app.locals.mobileSessions.has(req.headers['session-id'])) {
         app.locals.mobileSessions.delete(req.headers['session-id']);
     }
+    const userID = req.body.user_id || req.user?.id;
+    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    for (const gameID of gameIDs) {
+        if (app.locals.userOwnedGames[gameID] != null) {
+            app.locals.userOwnedGames[gameID].delete(userID);
+        }
+    }
     res.sendStatus(200);
 });
 
@@ -1008,11 +1027,11 @@ app.get('/api/login/ios', function (req, res) {
     res.redirect(`/api/auth/steam?redirect_uri=${req.query.redirect_uri}&state=${req.query.state}`,);
 });
 
-app.post('/api/logout/ios', function (req, res) {
-    const id = req.query.id;
-    app.locals.mobileSessions.delete(id);
-    res.sendStatus(200);
-});
+// app.post('/api/logout/ios', function (req, res) {
+//     const id = req.query.id;
+//     app.locals.mobileSessions.delete(id);
+//     res.sendStatus(200);
+// });
 
 // GET /auth/steam
 //   Use passport.authenticate() as route middleware to authenticate the
@@ -1052,7 +1071,6 @@ app.get('/api/auth/steam/return',
         }
     });
 
-const PORT = process.env.PORT || 8080;
 const httpServer = createServer(app);
 httpServer.on('upgrade', (request, socket, head) => {
     // Use the Express session middleware to parse the session from the request.

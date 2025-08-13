@@ -216,39 +216,79 @@ export async function notifyUser(gameName, icon, backupLogo) {
     // to be respectful - there is no need to ask them again.
 }
 
-export function checkImageURL(imageUrl) {
-    return new Promise((resolve,) => {
-        const img = new Image();
-        img.src = imageUrl;
-        img.onload = () => {
-            resolve(true);
-        };
-        img.onerror = () => {
-            resolve(false);
-        };
-    });
+const IMAGE_MIME_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/svg+xml'
+]);
+
+async function isImageValid(imageUrl) {
+    try {
+        if (typeof window !== 'undefined') {
+            return new Promise((resolve,) => {
+                const img = new Image();
+                const timeoutId = setTimeout(() => {
+                    img.onload = null;
+                    img.onerror = null;
+                    resolve(false);
+                }, 1000);
+
+                img.onload = () => {
+                    clearTimeout(timeoutId);
+                    resolve(true);
+                };
+
+                img.onerror = () => {
+                    clearTimeout(timeoutId);
+                    resolve(false);
+                };
+                img.src = imageUrl;
+            });
+        }
+
+        const response = await axios.head(imageUrl, {
+            // Set a timeout to prevent the request from hanging indefinitely.
+            timeout: 1000,
+        });
+
+        // Check if the status is in the success range (e.g., 200 OK).
+        const isSuccess = response.status >= 200 && response.status < 300;
+
+        // Check the Content-Type header to confirm it's an image.
+        const contentType = response.headers['content-type'];
+        const isImage = contentType && IMAGE_MIME_TYPES.has(contentType.split(';')[0]);
+
+        return isSuccess && isImage;
+
+    } catch (error) {
+        // Any error (network, 404, 500, timeout, etc.) means the URL is not valid.
+        console.error(`Error checking image URL ${imageUrl}:`, error.message);
+        return false;
+    }
 }
 
-export async function getViableImageURL(imageURLs, imageKey, appid, name) {
+export async function getViableImageURL(imageURLs, imageKey, appid, name = 'this game', fullUrl) {
     const localImageURLs = [...imageURLs];
     let validImageURL = null;
     do {
         const url = localImageURLs.shift();
         if (url.startsWith('api')) {
             try {
-                const result = await axios.get('/api/game-details', { params: { appid } });
+                const result = await axios.get(fullUrl ?? '/api/game-details', { params: { appid } });
                 const { [imageKey]: imageURL } = result?.data;
                 validImageURL = imageURL;
             } catch {
                 console.error(`Could not retrieve image for ${name}.`)
             }
         } else {
-            const isValidURL = await checkImageURL(url);
+            const isValidURL = await isImageValid(url);
             if (isValidURL) {
                 validImageURL = url;
             }
         }
-    } while (validImageURL === null && localImageURLs.length > 0)
+    } while (validImageURL == null && localImageURLs.length > 0)
     return validImageURL;
 }
 

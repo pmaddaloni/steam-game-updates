@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
 import removeAccents from 'remove-accents';
+
 import { createWebSocketConnector, notifyUser } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
@@ -46,10 +47,12 @@ const defaultState = {
 
 const reducer = (state, { type, value }) => {
     switch (type) {
-        case 'login': return { ...state, ...value };
+        case 'login':
+            return { ...state, ...value };
         case 'logout':
             localStorage.removeItem('steam-game-updates-user');
             localStorage.removeItem('steam-game-updates-filters');
+            axios.post('/api/logout', { id: state.id, ownedGames: state.ownedGames }, { withCredentials: true })
             return defaultState;
         case 'refreshGames':
             return { ...state, ownedGames: null, gameUpdates: [], loadingProgress: null };
@@ -187,17 +190,8 @@ export const AuthProvider = function ({ children }) {
                     // One of two types of messages is being received here:
                     // 1. A map of apps that updated which was retrieved from Valve's PICS service
                     // 2. An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
-                    const { appid, eventsLength, mostRecentEventTime, apps } = JSON.parse(event.data);
-
-                    if (apps != null) {
-                        const appids = Object.keys(apps);
-                        for (const appid of appids) {
-                            if (state.ownedGames && state.ownedGames[appid] != null) {
-                                for (let i = 0; i < 2; i++)
-                                    gameUpdatesWorker.postMessage({ appid, name: state.ownedGames?.[appid]?.name ?? 'none' })
-                            }
-                        }
-                    } else if (appid != null && state.ownedGames != null) {
+                    const { appid, eventsLength, mostRecentEventTime } = JSON.parse(event.data);
+                    if (appid != null && state.ownedGames != null) {
                         const app = state.ownedGames[appid];
                         if (app != null && eventsLength > 0 && (app.events.length === 0 || app.events[0]?.posttime < mostRecentEventTime)) {
                             // If the appid is present, it means a specific game has updated.
@@ -222,7 +216,7 @@ export const AuthProvider = function ({ children }) {
     }, [state.id, state.ownedGames]);
 
     const getAllUserOwnedGames = useCallback(async (userID = state.id) => {
-        const result = await axios.get('api/owned-games', { params: { id: userID, /* use_local: true  */ } });
+        const result = await axios.get('api/owned-games', { params: { id: userID } });
         if (result != null) {
             const ownedGames = result?.data?.games?.reduce((acc, game) => {
                 return {
@@ -240,10 +234,6 @@ export const AuthProvider = function ({ children }) {
         }; */
     }, [state.id])
 
-    const fetchMoreUpdates = useCallback(() => {
-        gameDetailsWorker.postMessage(state.ownedGames);
-    }, [state.ownedGames]);
-
     useEffect(() => {
         if (state.id && state.ownedGames == null) {
             (async () => {
@@ -257,7 +247,7 @@ export const AuthProvider = function ({ children }) {
                     if (ownedGames) {
                         const totalNumberOfRequests = Math.ceil(Object.keys(ownedGames).length / REQUEST_SIZE) + 2;
                         dispatch({ type: 'updateLoadingProgress', value: (1 / totalNumberOfRequests) * 100 });
-                        gameDetailsWorker.postMessage({ ownedGames, totalNumberOfRequests, requestSize: REQUEST_SIZE });
+                        gameDetailsWorker.postMessage({ ownedGames, totalNumberOfRequests, requestSize: REQUEST_SIZE, id: `web-client-${state.id}` });
                     } else {
                         dispatch({ type: 'updateLoadingProgress', value: 100 });
                         dispatch({ type: 'updateOwnedGames', value: {} });
@@ -276,7 +266,7 @@ export const AuthProvider = function ({ children }) {
 
     return (
         <AuthContext.Provider
-            value={{ ...state, fetchMoreUpdates, dispatch }}
+            value={{ ...state, dispatch }}
         >
             {children}
         </AuthContext.Provider>

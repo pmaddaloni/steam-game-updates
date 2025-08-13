@@ -9,6 +9,8 @@ const config = {
     ENVIRONMENT: process.env.NODE_ENV || 'development',
     SSL_KEY_PATH: process.env.SSL_KEY_PATH || './ssl/key.pem',
     SSL_CERT_PATH: process.env.SSL_CERT_PATH || './ssl/cert.pem',
+    ONE_SIGNAL_APP_ID: process.env.ONE_SIGNAL_APP_ID,
+    ONE_SIGNAL_REST_API_KEY: process.env.ONE_SIGNAL_REST_API_KEY,
 };
 
 export default config;

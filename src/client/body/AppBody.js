@@ -179,7 +179,7 @@ export default function Body() {
                                 <small><b>**</b>Your Steam profile must be public for this to work.<b>**</b></small>
                             </>
                             :
-                            loadingProgress === 100 && ownedGames != null ?
+                            loadingProgress === 100 && ownedGames != null && filteredList == null ?
                                 <>
                                     It seems like you don't own any Steam games...
                                     <br />

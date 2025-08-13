@@ -214,7 +214,10 @@ const ONE_SIGNAL_REST_API_KEY = config.ONE_SIGNAL_REST_API_KEY;
 
 async function sendIndividualNotifications(appid) {
     if (app.locals.userOwnedGames[appid] != null) {
-        const usersToNotify = [...app.locals.userOwnedGames[appid]].filter(userId => !userId.startWith('web-client'));
+        const usersToNotify = [...app.locals.userOwnedGames[appid]].filter(userId => userId.startsWith('web-client') === false);
+        if (usersToNotify.length === 0) {
+            return;
+        }
         try {
             const name = app.locals.allSteamGameNames[appid];
             const icons = [
@@ -228,7 +231,6 @@ async function sendIndividualNotifications(appid) {
             ]
             const fullUrl = `http://localhost:${PORT}/api/game-details`;
             const validImageURL = await getViableImageURL(icons, 'id', appid, name, fullUrl);
-            console.log('\nNotification sent to users for app:', appid, name, validImageURL, '\n');
 
             const notification = {
                 app_id: ONE_SIGNAL_APP_ID,
@@ -505,7 +507,6 @@ async function getGameIDUpdates(
 }
 
 console.log(`Server last refreshed on ${new Date(app.locals.lastServerRefreshTime)} with ${app.locals.dailyLimit} requests left`);
-// console.log(`Server has loaded up ${Object.keys(app.locals.allSteamGamesUpdates).length} games with their updates.`);
 
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
@@ -577,6 +578,7 @@ const getGameUpdates = async (externalGameID) => {
 
         let gameID = externalGameID ?? priorityGameID
             ?? app.locals.allSteamGames[app.locals.gameIDsToCheckIndex]?.appid;
+
         if (gameID == null) {
             app.locals.gameIDsToCheckIndex = 0; // Loop back to the beginning
             gameID = app.locals.allSteamGames[0].appid;
@@ -859,7 +861,6 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
     const updates = {}; // {appid: gameID, events: []}
     // Iterate through all passed in games and add them if found
     for (const gameID of gameIDs) {
-        console.log(userID)
         if (app.locals.userOwnedGames[gameID] == null) {
             app.locals.userOwnedGames[gameID] = new Set();
         }

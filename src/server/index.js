@@ -609,18 +609,17 @@ const getGameUpdates = async (externalGameID) => {
                     return { posttime, body, gid, headline, event_type: event.event_type };
                 });
                 const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0);
-                const mostRecentPreviouslyKnownEventTime = await getRedisValue(gameID)?.[0]?.posttime ?? 0;
+                const mostRecentPreviouslyKnownEventTime = (await getRedisValue(gameID))?.[0]?.posttime ?? 0;
 
-                // const mostRecentPreviouslyKnownEventTime = (app.locals.allSteamGamesUpdates[gameID]?.[0]?.posttime ?? 0);
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
+                redisClient.hset('allSteamGamesUpdates', gameID, JSON.stringify(mostRecentEvents));
 
-                // app.locals.allSteamGamesUpdates[gameID] = mostRecentEvents;
-                await redisClient.hset('allSteamGamesUpdates', gameID, JSON.stringify(mostRecentEvents));
                 if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
+                    // Notify mobile users of the new updates.
                     sendIndividualNotifications(gameID);
-                    // let clients know a new update has been processed
+                    // Also let web clients know a new update has been processed.
                     if (app.locals.userOwnedGames[gameID] != null) {
                         const usersToNotify = [...app.locals.userOwnedGames[gameID]]
                             .filter(userId => userId.startsWith('web-client'))

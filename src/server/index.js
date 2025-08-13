@@ -860,7 +860,7 @@ app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
 
 const notificationUnsubscribe = (req) => {
     const userID = req.body.id || req.user?.id;
-    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
     for (const gameID of gameIDs) {
         if (app.locals.userOwnedGames[gameID] != null) {
             app.locals.userOwnedGames[gameID].delete(userID);
@@ -870,7 +870,7 @@ const notificationUnsubscribe = (req) => {
 
 const notificationSubscribe = (req) => {
     const userID = req.body.id || req.user?.id;
-    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
     for (const gameID of gameIDs) {
         if (userID != null) {
             if (app.locals.userOwnedGames[gameID] == null) {
@@ -887,7 +887,7 @@ const notificationSubscribe = (req) => {
 // once the end is reached, delete the temp map entry
 const tempMap = {};
 app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
     const requestID = req.body.request_id;
 
     if (requestID == null) {
@@ -960,7 +960,7 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
 });
 
 // app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
-//     const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID, 10));
+//     const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID, 10));
 //     const updates = []; // An array of {appid: gameID, events: []} in order of most recently updated
 //     // Iterate through all passed in games and add them if found
 //     for (const gameID of gameIDs) {
@@ -982,7 +982,7 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
 // });
 
 app.post('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const gameIDs = Object.values(req.body.appids ?? {}).map(gameID => parseInt(gameID));
+    const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
     const lastCheckTime = parseInt(req.query.last_check_time)   // this is ms
     const gameIDsWithUpdates = [];
     notificationSubscribe(req);

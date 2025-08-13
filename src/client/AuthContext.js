@@ -54,7 +54,7 @@ const reducer = (state, { type, value }) => {
             localStorage.removeItem('steam-game-updates-user');
             localStorage.removeItem('steam-game-updates-filters');
             localStorage.removeItem('steam-game-updates-notifications-allowed')
-            axios.post('/api/logout', { id: state.id, ownedGames: state.ownedGames }, { withCredentials: true })
+            axios.post('/api/logout', { id: state.id, appids: Object.keys(state.ownedGames) }, { withCredentials: true })
             return defaultState;
         case 'refreshGames':
             return { ...state, ownedGames: null, gameUpdates: [], loadingProgress: null };

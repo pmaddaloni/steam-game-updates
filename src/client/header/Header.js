@@ -283,12 +283,11 @@ export default function Header() {
                                 style={{ ...popoverStyle }}
                             >
                                 <li style={listItemStyle}
-                                    onClick={() => {
+                                    onClick={async () => {
                                         let allow = !allowNotifications;
-                                        if (allow && Notification.permission === "default") {
-                                            Notification.requestPermission().then((permission) => {
-                                                allow = permission === "granted";
-                                            });
+                                        if (Notification.permission === "default") {
+                                            const permission = await Notification.requestPermission();
+                                            allow = permission === "granted";
                                         } else if (allow && Notification.permission === "denied") {
                                             window.alert("You have denied notifications. Please enable them in your browser settings to receive updates.");
                                             allow = false;

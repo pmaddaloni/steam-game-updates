@@ -129,6 +129,12 @@ $menu-side-padding: 20px;
             margin-left: 4px;
         }
 
+        @-moz-document url-prefix() {
+            .menu-caret {
+                align-self: center;
+            }
+        }
+
         .logout {
             opacity: 0;
             margin-left: -140px;
@@ -143,9 +149,9 @@ $menu-side-padding: 20px;
         }
     }
 
-    .menu {
+    .menu,
+    .login {
         transition: box-shadow 0.2s ease-in-out;
-        border-radius: 15px;
         user-select: none;
 
         display: flex;
@@ -156,6 +162,10 @@ $menu-side-padding: 20px;
         img {
             margin-right: 7px;
             border-radius: 3px;
+        }
+
+        &.menu {
+            border-radius: 15px;
         }
     }
 

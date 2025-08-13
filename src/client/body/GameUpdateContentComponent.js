@@ -60,7 +60,7 @@ function formatTextToHtml(text) {
                 } else if (word === '[/u]') {
                     html = html.trimEnd();
                     html += '</u> ';
-                } else if (word === '[p]') {
+                } else if (word.startsWith('[p')) {
                     html += '<p>';
                 } else if (word === '[/p]') {
                     html += '</p>';

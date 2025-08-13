@@ -109,8 +109,11 @@ const reducer = (state, { type, value }) => {
             })
             return { ...state, filters: value, menuFilters: [...filterSet] }
         case 'setNotificationsAllowed':
-            localStorage.setItem('steam-game-updates-notifications-allowed', JSON.stringify(value));
-            return { ...state, notificationsAllowed: value }
+            if (Notification.permission === "granted") {
+                localStorage.setItem('steam-game-updates-notifications-allowed', JSON.stringify(value));
+                return { ...state, notificationsAllowed: value }
+            }
+            return state;
         default: return state;
     };
 };

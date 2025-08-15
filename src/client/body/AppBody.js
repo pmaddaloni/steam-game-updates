@@ -64,11 +64,10 @@ export default function Body() {
             if (gameList) {
                 gameList.classList.add(isWindows ? styles['os-windows'] : '');
             }
-            const gameContainer = document.getElementById('game-container');
+            const gameContainer = document.getElementById('update-container');
             if (gameContainer) {
                 gameContainer.classList.add(isWindows ? styles['os-windows'] : '');
             }
-            console.log(navigator.userAgentData.platform, isWindows, gameList, gameContainer);
         }
     }, [gameComponents.length]);
 

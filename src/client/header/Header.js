@@ -232,7 +232,7 @@ export default function Header() {
                     <div>Steam Game Updates</div>
                 </div>
                 {userID !== '' &&
-                    <>
+                    <div className={styles['input-container']}>
                         <input
                             title="Press the 's' hotkey to start searching"
                             id="search-bar"
@@ -266,7 +266,7 @@ export default function Header() {
                             className={styles.refreshGames}
                             onClick={() => dispatch({ type: 'refreshGames' })}
                         >Refresh Games</button>
-                    </>
+                    </div>
                 }
                 {userID !== '' ?
                     <Popover

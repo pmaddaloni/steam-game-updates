@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import { SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../../utilities/utils';
 
 // Using self is valid within a web worker.
 // eslint-disable-next-line no-restricted-globals
@@ -30,7 +31,9 @@ onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize, id 
         // after the first page returns, emit a result to the main thread but instead of overriding, append on to it.
         // Need to fetch all of them up front, not incrementally
         // because you don't know where the most recently updated game is in the list...
-        let result = await axios.post('/api/beta/game-updates-for-owned-games', { appids: gameIDs, request_id: requestID, id });
+        let result = await axios.post('/api/beta/game-updates-for-owned-games', {
+            appids: gameIDs, request_id: requestID, id: id + SUBSCRIPTION_BROWSER_ID_SUFFIX
+        });
         const { gameUpdatesIDs } = result.data;
         postMessage({ gameUpdatesIDs });
         postMessage({ loadingProgress: (++numberOfRequestsSoFar / totalNumberOfRequests) * 100 });

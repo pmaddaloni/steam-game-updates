@@ -54,7 +54,7 @@ const reducer = (state, { type, value }) => {
             localStorage.removeItem('steam-game-updates-user');
             localStorage.removeItem('steam-game-updates-filters');
             localStorage.removeItem('steam-game-updates-notifications-allowed')
-            axios.post('/api/logout', { id: state.id, appids: Object.keys(state.ownedGames ?? []) }, { withCredentials: true })
+            axios.post('/api/logout', { id: state.id, appids: Object.keys(state.ownedGames ?? []) })
             return defaultState;
         case 'refreshGames':
             return { ...state, ownedGames: null, gameUpdates: [], loadingProgress: null };
@@ -101,8 +101,10 @@ const reducer = (state, { type, value }) => {
                 filters = [];
             }
             localStorage.setItem('steam-game-updates-filters', JSON.stringify(filters));
+            axios.post('/api/notifications/filters', { id: state.id, filters });
             return { ...state, filters }
         case 'setFilters':
+            axios.post('/api/notifications/filters', { id: state.id, filters: value });
             const filterSet = new Set();
             value.forEach(f => {
                 filterSet.add(FILTER_REVERSE_MAPPING[f]);
@@ -202,17 +204,15 @@ export const AuthProvider = function ({ children }) {
             const onMessage = async (event) => {
                 // An app that updated. e.g. { appid: <appid>, events: [ <event>, ... ] }
                 if (state.notificationsAllowed) {
-                    const { appid, name, usersToNotify } = JSON.parse(event.data);
+                    const { appid, name, eventTitle } = JSON.parse(event.data);
                     if (appid != null && state.ownedGames != null) {
-                        if (usersToNotify.includes(state.id)) {
-                            const icon = state.ownedGames[appid] && `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
-                            notifyUser(name, icon, backupLogo);
-                        }
+                        const icon = state.ownedGames[appid] && `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${state.ownedGames[appid].img_icon_url}.jpg`
+                        notifyUser(name, eventTitle, icon, backupLogo);
                     }
                 }
             }
             if (steamGameUpdatesSocket == null) {
-                steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH, { onMessage });
+                steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH + `?id=${state.id}`, { onMessage });
                 steamGameUpdatesSocket.start();
             } else {
                 steamGameUpdatesSocket.updateOnMessage(onMessage);
@@ -252,7 +252,9 @@ export const AuthProvider = function ({ children }) {
                     if (ownedGames) {
                         const totalNumberOfRequests = Math.ceil(Object.keys(ownedGames).length / REQUEST_SIZE) + 2;
                         dispatch({ type: 'updateLoadingProgress', value: (1 / totalNumberOfRequests) * 100 });
-                        gameDetailsWorker.postMessage({ ownedGames, totalNumberOfRequests, requestSize: REQUEST_SIZE, id: `web-client-${state.id}` });
+                        gameDetailsWorker.postMessage(
+                            { ownedGames, totalNumberOfRequests, requestSize: REQUEST_SIZE, id: state.id }
+                        );
                     } else {
                         dispatch({ type: 'updateLoadingProgress', value: 100 });
                         dispatch({ type: 'updateOwnedGames', value: {} });

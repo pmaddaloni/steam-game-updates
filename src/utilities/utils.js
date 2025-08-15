@@ -16,6 +16,8 @@ import ServerWebSocket from 'ws';
  * @returns {object} An object with methods to start and stop the connection.
  */
 
+export const SUBSCRIPTION_BROWSER_ID_SUFFIX = ' - browser';
+
 export function createWebSocketConnector(
     url, {
         socketType = 'frontend',
@@ -186,7 +188,7 @@ export class PriorityQueue {
     }
 }
 
-export async function notifyUser(gameName, icon, backupLogo) {
+export async function notifyUser(gameName, eventTitle, icon, backupLogo) {
     if (!("Notification" in window)) {
         // Check if the browser supports notifications
         console.log("This browser does not support desktop notification");
@@ -200,7 +202,7 @@ export async function notifyUser(gameName, icon, backupLogo) {
 
     if (Notification.permission === "granted") {
         const notification = new Notification(`New Update for ${gameName}`, {
-            body: `Refresh SteamGameUpdates to view latest updates for ${gameName}.`,
+            body: eventTitle,
             icon: icon ?? backupLogo,
         });
 

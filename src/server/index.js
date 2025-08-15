@@ -134,7 +134,7 @@ const steamGameDetails = fs.existsSync(path.join(__dirname, './storage/steamGame
     : '{}';    // {[appid]: {name, img_icon_url, img_logo_url, ...}}
 const serverRefreshTimeAndCount = fs.existsSync(path.join(__dirname, './storage/serverRefreshTimeAndCount.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/serverRefreshTimeAndCount.json'), { encoding: 'utf8', flag: 'r' })
-    : JSON.stringify([new Date().getTime(), DAILY_LIMIT]); // Last time the server was refreshed (i.e. daily limit reset) and the last recorded daily limit
+    : JSON.stringify([new Date().getTime(), 0]); // Last time the server was refreshed (i.e. daily limit reset) and the last recorded daily limit
 const mobileSessions = fs.existsSync(path.join(__dirname, './storage/mobileSessions.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/mobileSessions.json'), { encoding: 'utf8', flag: 'r' })
     : '[]';    // [ sessionID-1, sessionID-2, ... ]

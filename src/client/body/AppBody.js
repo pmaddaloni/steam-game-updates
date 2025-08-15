@@ -58,15 +58,17 @@ export default function Body() {
     // Set appropriate styles for Windows specifically
     useEffect(() => {
         if (gameComponents.length !== 0) {
-            const isWindows = navigator.userAgent.toLocaleLowerCase().includes('windows');
+            const isWindows = navigator.userAgentData.platform.toLowerCase().includes('windows');
             const gameList = document.getElementById('game-list');
+
             if (gameList) {
-                gameList.classList.add(isWindows ? 'os-windows' : 'os-mac');
+                gameList.classList.add(isWindows ? styles['os-windows'] : '');
             }
             const gameContainer = document.getElementById('game-container');
             if (gameContainer) {
-                gameContainer.classList.add(isWindows ? 'os-windows' : 'os-mac');
+                gameContainer.classList.add(isWindows ? styles['os-windows'] : '');
             }
+            console.log(navigator.userAgentData.platform, isWindows, gameList, gameContainer);
         }
     }, [gameComponents.length]);
 
@@ -74,7 +76,6 @@ export default function Body() {
         if (loadingProgress != null) {
             setSelectedGame(null);
         }
-        console.log(filteredList)
         const newComponents = createGameComponents(filteredList ?? gameUpdates);
         setGameComponents(newComponents);
         // eslint-disable-next-line react-hooks/exhaustive-deps

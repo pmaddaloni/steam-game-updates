@@ -14,22 +14,32 @@ export const useAuth = () => useContext(AuthContext);
 // Break up a person's library request into chunks so as not to overwhelm the API.
 const REQUEST_SIZE = 250;
 
-const FILTER_MAPPING = {
-    major: [13, 14],
-    minor: 12,
-    gameEvents: 2,
-    newsEvents: 28,
-    crossPosts: 34
-}
+export const FILTER_MAPPING = (() => {
+    const mapping = {
+        major: [13, 14],
+        minor: 12,
+        gameEvents: 2,
+        newsEvents: 28,
+        crossPosts: 34
+    };
+    const used = new Set(
+        Object.values(mapping).flat()
+    );
+    mapping.allOtherEvents = Array.from({ length: 35 }, (_, i) => i + 1)
+        .filter(v => !used.has(v));
 
-export const FILTER_REVERSE_MAPPING = {
-    14: 'major',
-    13: 'major',
-    12: 'minor',
-    2: 'gameEvents',
-    28: 'newsEvents',
-    34: 'crossPosts'
-}
+    return mapping;
+})();
+
+export const FILTER_REVERSE_MAPPING = ((obj) => {
+    const inverted = {};
+    for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+            inverted[obj[key]] = key;
+        }
+    }
+    return inverted;
+})(FILTER_MAPPING);
 
 const defaultState = {
     displayName: '',

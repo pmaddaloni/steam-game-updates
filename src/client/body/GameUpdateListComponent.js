@@ -1,12 +1,15 @@
+import classnames from 'classnames';
 import { useEffect, useState } from 'react';
 import { getViableImageURL } from '../../utilities/utils';
 import styles from './body-styles.module.scss';
 
 export default function GameUpdateListComponent(props) {
-    const { appid, name, update, setSelectedGame, index } = props;
+    const { appid, name, update, setSelectedGame, index, newlyAdded } = props;
     const [imageURL, setImageURL] = useState(null);
+    const [clicked, setClicked] = useState(false);
     const changeSelectedGame = () => {
         const element = document.getElementById('update-content');
+        setClicked(true);
         if (element && element.dataset.gid !== update.gid) {
             element.style.transition = null;
             element.style.opacity = 0;
@@ -33,7 +36,7 @@ export default function GameUpdateListComponent(props) {
                 id={index}
                 key={`${appid}-${index}`}
                 onClick={changeSelectedGame}
-                className={styles.game}
+                className={classnames(styles.game, newlyAdded && !clicked ? styles['newly-added'] : null)}
             >
                 <div className={styles['patch-date']}>
                     <div>{new Date(update.posttime * 1000).toLocaleDateString()}</div>

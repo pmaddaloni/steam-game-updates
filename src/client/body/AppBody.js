@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { cloneElement, useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../AuthContext';
 import styles from './body-styles.module.scss';
 import GameUpdateContentComponent from './GameUpdateContentComponent';
@@ -13,6 +13,7 @@ export default function Body() {
     const [gameComponents, setGameComponents] = useState([]);
     const currentListIndexRef = useRef(0);
     const currentGameComponentsRef = useRef([]);
+    const gameUpdatesRef = useRef(null);
     const timeoutId = useRef(null);
 
     const createGameComponents = useCallback((gamesList, showMore = false) => {
@@ -54,9 +55,10 @@ export default function Body() {
         return result;
     }, [filters, ownedGames]);
 
+    // Set appropriate styles for Windows specifically
     useEffect(() => {
         if (gameComponents.length !== 0) {
-            const isWindows = navigator.userAgent.startsWith('Win');
+            const isWindows = navigator.userAgent.toLocaleLowerCase().includes('windows');
             const gameList = document.getElementById('game-list');
             if (gameList) {
                 gameList.classList.add(isWindows ? 'os-windows' : 'os-mac');
@@ -69,7 +71,10 @@ export default function Body() {
     }, [gameComponents.length]);
 
     useEffect(() => {
-        setSelectedGame(null);
+        if (loadingProgress != null) {
+            setSelectedGame(null);
+        }
+        console.log(filteredList)
         const newComponents = createGameComponents(filteredList ?? gameUpdates);
         setGameComponents(newComponents);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,18 +88,90 @@ export default function Body() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ownedGames]);
 
-    useEffect(() => {
-        // handle the case where a user refreshes their updates.
-        if (gameUpdates.length === 0) {
-            setSelectedGame(null);
-            setGameComponents([]);
+    const insertIntoExistingDataList = (newUpdates) => {
+        const getUpdate = (appid, posttime) => {
+            const { events, name } = ownedGames[appid];
+            const updateIndex = events.findIndex(e => e.posttime === posttime);
+            return { name, update: events[updateIndex], updateIndex };
+        };
+
+        const binarySearchInsertIndex = (arr, posttime) => {
+            let low = 0, high = arr.length;
+            while (low < high) {
+                const mid = (low + high) >> 1;
+                if (arr[mid].update.posttime <= posttime) {
+                    high = mid;
+                } else {
+                    low = mid + 1;
+                }
+            }
+            return low;
+        };
+
+        let currentIndex = currentListIndexRef.current;
+        let newList = [...currentGameComponentsRef.current];
+
+        for (const [posttime, appid] of newUpdates) {
+            const { name, update, updateIndex } = getUpdate(appid, posttime);
+            if (!update || filters.includes(update.event_type)) continue;
+
+            const insertIndex = binarySearchInsertIndex(newList, posttime);
+            newList.splice(insertIndex, 0,
+                <GameUpdateListComponent
+                    key={appid + '-' + update.posttime}
+                    appid={appid}
+                    name={name}
+                    update={update}
+                    newlyAdded={true}
+                    setSelectedGame={setSelectedGame}
+                    index={insertIndex}
+                    eventIndex={updateIndex}
+                />
+            );
+            currentIndex++;
         }
-    }, [gameUpdates]);
+
+        newList = newList.map((component, idx) =>
+            cloneElement(component, { index: idx })
+        );
+
+        currentListIndexRef.current = currentIndex;
+        currentGameComponentsRef.current = newList;
+        setGameComponents(newList);
+    };
+
+    useEffect(() => {
+        if (loadingProgress === 100 &&
+            currentGameComponentsRef.length &&
+            gameUpdatesRef.current != null /* &&
+            gameUpdates.length !== gameUpdatesRef.current.length */
+        ) {
+            const oldGameUpdates = [...gameUpdatesRef.current];
+            const oldSet = new Set(oldGameUpdates.map(([ms, id]) => `${ms}:${id}`));
+            const newlyAddedUpdates = gameUpdates.filter(([ms, id]) =>
+                !oldSet.has(`${ms}:${id}`)
+            );
+            insertIntoExistingDataList(newlyAddedUpdates);
+            gameUpdatesRef.current = null;
+        } else if (loadingProgress !== 100) {
+            gameUpdatesRef.current = gameUpdates
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loadingProgress]);
+
+    // useEffect(() => {
+    //     // handle the case where a user refreshes their updates.
+    //     if (gameUpdates.length === 0) {
+    //         setSelectedGame(null);
+    //         setGameComponents([]);
+    //     }
+    // }, [gameUpdates]);
 
     useEffect(() => {
         const previousSelectedGame = document.getElementsByClassName(styles.selected)[0];
         if (previousSelectedGame) {
             previousSelectedGame.classList.remove(styles.selected);
+            previousSelectedGame.classList.remove(styles['newly-added']);
         }
         const selectedGameComponent = document.getElementById(selectedGame?.index);
         if (selectedGameComponent) {

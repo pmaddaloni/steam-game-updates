@@ -116,11 +116,11 @@ const reducer = (state, filterToUpdate) => {
 export default function Header() {
     const { notificationsAllowed, id: userID, displayName, photos, dispatch, menuFilters, loadingProgress } = useAuth();
     const [interactionDisabled, setInteractionDisabled] = useState(true);
+    const [searchValue, setSearchValue] = useState('');
     const [allowNotifications, setAllowNotifications] = useState(notificationsAllowed);
     const [isPopoverOpen, setIsOpen] = useState(false);
     const [filters, filtersDispatch] = useReducer(reducer, defaultFilters)
     const dispatchFilterChanges = type => dispatch({ type: 'updateFilters', value: type });
-
 
     useEffect(() => {
         (menuFilters).forEach(f => filtersDispatch(f))
@@ -128,6 +128,11 @@ export default function Header() {
 
     useEffect(() => {
         setInteractionDisabled(loadingProgress < 100);
+        if (searchValue && loadingProgress == null) {
+            setSearchValue('');
+            scrollToTopOfList(searchValue);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadingProgress])
 
     useEffect(() => {
@@ -230,19 +235,7 @@ export default function Header() {
         ['Cross Posts', 'crossPosts'],
         ['All Other Events', 'allOtherEvents'],
     ];
-    const onToggle = (key) => () => {
-        const newFilter = !filters[key];
-        if (Object.values(filters).filter(Boolean).length === 1 && newFilter === false) {
-            window.alert('Cannot disable all filters', 'You must have at least one filter enabled to continue.')
-            return;
-        } else {
-            filtersDispatch(key);
-            dispatchFilterChanges(key);
-        }
-    }
-
     const allButtonDisabled = Object.values(filters).every(filter => filter === true);
-    const noneButtonDisabled = Object.values(filters).every(filter => filter === false);
 
     return (
         <>
@@ -265,7 +258,9 @@ export default function Header() {
                             name="search"
                             maxLength="100"
                             onFocus={e => e.target.select()}
+                            value={searchValue}
                             onChange={({ target }) => {
+                                setSearchValue(target.value);
                                 if (target.value === '') {
                                     scrollToTopOfList(target.value, target);
                                 }

@@ -67,7 +67,11 @@ const reducer = (state, { type, value }) => {
             axios.post('/api/logout', { id: state.id, appids: Object.keys(state.ownedGames ?? []) })
             return defaultState;
         case 'refreshGames':
-            return { ...state, ownedGames: null, gameUpdates: [], loadingProgress: null };
+            return {
+                ...state,
+                loadingProgress: null,
+                filteredList: null,
+            };
         case 'addOwnedGamesEvents':
             const newOwnedGames = { ...state.ownedGames, ...value };
             // localStorage.setItem('steam-game-updates-ownedGames', JSON.stringify(newOwnedGames));
@@ -114,7 +118,9 @@ const reducer = (state, { type, value }) => {
             axios.post('/api/notifications/filters', { id: state.id, filters });
             return { ...state, filters }
         case 'setFilters':
-            axios.post('/api/notifications/filters', { id: state.id, filters: value });
+            if (state.id) {
+                axios.post('/api/notifications/filters', { id: state.id, filters: value });
+            }
             const filterSet = new Set();
             value.forEach(f => {
                 filterSet.add(FILTER_REVERSE_MAPPING[f]);
@@ -141,13 +147,12 @@ export const AuthProvider = function ({ children }) {
         // Populate the context with what's already been stored in local storage.
         async function checkLocalStorageIfLoggedIn() {
             let user = await localStorage.getItem('steam-game-updates-user');
+            let parsedGameUpdatesFilters = [];
             if (user != null) {
                 user = JSON.parse(user);
-                dispatch({ type: 'login', value: user });
                 let storedGameUpdatesFilters = await localStorage.getItem('steam-game-updates-filters');
                 if (storedGameUpdatesFilters != null) {
-                    const parsedGameUpdatesFilters = JSON.parse(storedGameUpdatesFilters);
-                    dispatch({ type: 'setFilters', value: parsedGameUpdatesFilters });
+                    parsedGameUpdatesFilters = JSON.parse(storedGameUpdatesFilters);
                 }
                 let storedNotificationsAllowed = await localStorage.getItem('steam-game-updates-notifications-allowed');
                 if (storedNotificationsAllowed != null) {
@@ -157,17 +162,18 @@ export const AuthProvider = function ({ children }) {
             } else {
                 dispatch({ type: 'logout' })
             }
-            return user;
+            return { user, parsedGameUpdatesFilters };
         };
         (async () => {
             try {
-                const isLoggedInLocally = await checkLocalStorageIfLoggedIn();
-                if (isLoggedInLocally) {
+                const { user, parsedGameUpdatesFilters } = await checkLocalStorageIfLoggedIn();
+                if (user) {
                     // checking if user has a valid session on the server
                     const result = await axios.get('/api/user');
                     if (result?.data) {
                         localStorage.setItem('steam-game-updates-user', JSON.stringify(result.data));
                         dispatch({ type: 'login', value: result.data });
+                        dispatch({ type: 'setFilters', value: parsedGameUpdatesFilters });
                     }
                 }
             } catch (e) {
@@ -250,7 +256,7 @@ export const AuthProvider = function ({ children }) {
     }, [state.id])
 
     useEffect(() => {
-        if (state.id && state.ownedGames == null) {
+        if (state.id && state.loadingProgress === null) {
             (async () => {
                 dispatch({ type: 'updateLoadingProgress', value: 0 });
                 // First grab all of a user's owned games
@@ -276,7 +282,7 @@ export const AuthProvider = function ({ children }) {
             })();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [getAllUserOwnedGames, state.id, state.ownedGames]);
+    }, [getAllUserOwnedGames, state.id, state.loadingProgress]);
 
     if (process.env.NODE_ENV === 'development') {
         window.state = state;

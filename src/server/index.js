@@ -233,7 +233,7 @@ async function sendIndividualNotifications({ appid, name, eventTitle, eventType 
             [...app.locals.gamesWithSubscriptions[appid]]
                 .filter(userId => userId.endsWith(SUBSCRIPTION_IOS_ID_SUFFIX))
                 .filter(userId => app.locals.subscribedUserFilters[userId]?.includes(eventType) === false);
-        console.log(`Users to notify for app ${appid} (${name}):`, usersToNotify, '\n');
+
         if (usersToNotify.length === 0) {
             return;
         }

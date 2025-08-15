@@ -11,14 +11,14 @@ axios.defaults.baseURL = self.location.host.includes('steamgameupdates.info') ?
 // https://create-react-app.dev/docs/adding-custom-environment-variables/#adding-development-environment-variables-in-env
 axios.defaults.withCredentials = true;
 
-onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize, id } }) => {
+onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize, id, filters } }) => {
     let ownedGamesWithoutUpdates = { ...ownedGames };
     let numberOfRequestsSoFar = 1;
     // Remove games that didn't get a name.
     // This happens when a title has been delisted - a name is no longer returned by the API
-    const gameIDs = Object.keys(ownedGames);
-    if (gameIDs.length === 0) {
-        postMessage({ ownedGamesWithUpdates: [], gameUpdatesIDs: [] });
+    const appids = Object.keys(ownedGames);
+    if (appids.length === 0) {
+        postMessage({ ownedGamesWithUpdates: {}, gameUpdatesIDs: [] });
         return;
     }
 
@@ -32,7 +32,7 @@ onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize, id 
         // Need to fetch all of them up front, not incrementally
         // because you don't know where the most recently updated game is in the list...
         let result = await axios.post('/api/beta/game-updates-for-owned-games', {
-            appids: gameIDs, request_id: requestID, id: id + SUBSCRIPTION_BROWSER_ID_SUFFIX
+            appids, request_id: requestID, id: id + SUBSCRIPTION_BROWSER_ID_SUFFIX, filters
         });
         const { gameUpdatesIDs } = result.data;
         postMessage({ gameUpdatesIDs });

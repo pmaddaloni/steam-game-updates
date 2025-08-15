@@ -19,7 +19,12 @@ import WebSocket, { WebSocketServer } from 'ws';
 // import SteamStrategy from 'modern-passport-steam';
 
 import config from '../../config.js';
-import { createWebSocketConnector, getViableImageURL, PriorityQueue, SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../utilities/utils.js';
+import {
+    createWebSocketConnector,
+    getViableImageURL,
+    PriorityQueue,
+    SUBSCRIPTION_IOS_ID_SUFFIX
+} from '../utilities/utils.js';
 
 const environment = config.ENVIRONMENT || 'development'; // Default to 'development' if not set
 const PORT = process.env.PORT || 8080;
@@ -118,11 +123,11 @@ if (!fs.existsSync(passportSessionsDirectoryPath)) {
 const allSteamGamesUpdatesPossiblyChangedFromFile = fs.existsSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/allSteamGamesUpdatesPossiblyChanged.json'), { encoding: 'utf8', flag: 'r' })
     : '{}';    // {[appid]: POSSIBLE most recent update time}
-const gameIDsWithErrors = fs.existsSync(path.join(__dirname, './storage/gameIDsWithErrors.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/gameIDsWithErrors.json'), { encoding: 'utf8', flag: 'r' })
+const appidsWithErrors = fs.existsSync(path.join(__dirname, './storage/appidsWithErrors.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/appidsWithErrors.json'), { encoding: 'utf8', flag: 'r' })
     : '[]';    // [appid]
-const gameIDsToCheckIndex = fs.existsSync(path.join(__dirname, './storage/gameIDsToCheckIndex.json')) ?
-    fs.readFileSync(path.join(__dirname, './storage/gameIDsToCheckIndex.json'), { encoding: 'utf8', flag: 'r' })
+const appidsToCheckIndex = fs.existsSync(path.join(__dirname, './storage/appidsToCheckIndex.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/appidsToCheckIndex.json'), { encoding: 'utf8', flag: 'r' })
     : '0';     // For incrementing through ALL steam games - ~ 100k requests/day
 const steamGameDetails = fs.existsSync(path.join(__dirname, './storage/steamGameDetails.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/steamGameDetails.json'), { encoding: 'utf8', flag: 'r' })
@@ -142,7 +147,7 @@ const subscribedUserFilters = fs.existsSync(path.join(__dirname, './storage/subs
 
 const app = express();
 app.locals.requestQueue = new PQueue({ interval: REQUEST_WAIT_TIME, intervalCap: NUMBER_OF_REQUESTS_PER_WAIT_TIME });
-app.locals.gameIDsToCheckPriorityQueue = new PriorityQueue();
+app.locals.appidsToCheckPriorityQueue = new PriorityQueue();
 
 function makeRequest(url, method = 'get') {
     return async () => {
@@ -180,8 +185,8 @@ app.locals.allSteamGames = gameAppidsArray;
 app.locals.allSteamGameNames = gameNamesDict;
 app.locals.steamGameDetails = JSON.parse(steamGameDetails);
 app.locals.allSteamGamesUpdatesPossiblyChanged = JSON.parse(allSteamGamesUpdatesPossiblyChangedFromFile);
-app.locals.gameIDsToCheckIndex = parseInt(JSON.parse(gameIDsToCheckIndex));
-app.locals.gameIDsWithErrors = new Set(JSON.parse(gameIDsWithErrors));
+app.locals.appidsToCheckIndex = parseInt(JSON.parse(appidsToCheckIndex));
+app.locals.appidsWithErrors = new Set(JSON.parse(appidsWithErrors));
 const parsedUserOwnedGames = JSON.parse(userOwnedGames);
 const objectWithSets = Object.entries(parsedUserOwnedGames).reduce((acc, [key, value]) => {
     acc[key] = new Set(value);
@@ -208,7 +213,7 @@ const webSocketServerOptions = { noServer: true };
 // }
 const wss = new WebSocketServer(webSocketServerOptions);
 wss.on('connection', function connection(ws, req) {
-    const id = req.url.split('=')?.[1]
+    const id = decodeURIComponent(req.url.split('=')?.[1] || '').trim();
     console.log(`WebSocket connection established with a client with Steam ID ${id}`);
     ws.id = id;
     ws.on('error', console.error);
@@ -222,18 +227,17 @@ wss.on('connection', function connection(ws, req) {
 const ONE_SIGNAL_APP_ID = config.ONE_SIGNAL_APP_ID;
 const ONE_SIGNAL_REST_API_KEY = config.ONE_SIGNAL_REST_API_KEY;
 
-async function sendIndividualNotifications(appid, eventTitle, eventType) {
+async function sendIndividualNotifications({ appid, name, eventTitle, eventType }) {
     if (app.locals.gamesWithSubscriptions[appid] != null) {
         let usersToNotify =
             [...app.locals.gamesWithSubscriptions[appid]]
-                .filter(userId => !app.locals.subscribedUserFilters[userId]?.includes(eventType))
-                .filter(userId => !userId?.endsWith(SUBSCRIPTION_BROWSER_ID_SUFFIX));
-
+                .filter(userId => userId.endsWith(SUBSCRIPTION_IOS_ID_SUFFIX))
+                .filter(userId => app.locals.subscribedUserFilters[userId]?.includes(eventType) === false);
+        console.log(`Users to notify for app ${appid} (${name}):`, usersToNotify, '\n');
         if (usersToNotify.length === 0) {
             return;
         }
         try {
-            const name = app.locals.allSteamGameNames[appid];
             const icons = [
                 `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/capsule_616x353.jpg`,
                 `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/logo.png`,
@@ -248,7 +252,7 @@ async function sendIndividualNotifications(appid, eventTitle, eventType) {
 
             const notification = {
                 app_id: ONE_SIGNAL_APP_ID,
-                target_channel: "push",
+                target_channel: 'push',
                 contents: {
                     'en': eventTitle,
                 },
@@ -256,15 +260,17 @@ async function sendIndividualNotifications(appid, eventTitle, eventType) {
                     'en': `New Update for ${name}`,
                 },
                 ios_attachments: {
-                    id: validImageURL
+                    'id': {
+                        'url': validImageURL
+                    }
                 },
-                "include_aliases": {
-                    "external_id": usersToNotify
+                'include_aliases': {
+                    'external_id': usersToNotify
                 },
                 ios_badgeType: 'Increase',
                 ios_badgeCount: 1,
             }
-            await axios.post(
+            const result = await axios.post(
                 'https://onesignal.com/api/v1/notifications?c=push',
                 notification,
                 {
@@ -274,6 +280,7 @@ async function sendIndividualNotifications(appid, eventTitle, eventType) {
                     },
                 }
             );
+            console.log(`Notification sent to users for app ${appid} (${name}):`, result.data);
         } catch (error) {
             console.error(`Error sending notification to users for app ${appid}:`, error.response ? error.response.data : error.message);
         }
@@ -306,7 +313,7 @@ function initializeSteamWebPipes() {
                 // If at least one subscribed user owns the game, we should check it.
                 if (app.locals.gamesWithSubscriptions[appid]?.size > 0) {
                     console.log(`Game ${appid} has updates, checking for changes...`);
-                    app.locals.gameIDsToCheckPriorityQueue.enqueue(appid, app.locals.allSteamGamesUpdatesPossiblyChanged[appid]);
+                    app.locals.appidsToCheckPriorityQueue.enqueue(appid, app.locals.allSteamGamesUpdatesPossiblyChanged[appid]);
                 }
             }
         },
@@ -449,14 +456,14 @@ const ensureAuthenticated = function (req, res, next) {
     res.sendStatus(401);
 }
 
-async function getGameIDUpdates(
-    gameID,
+async function getAppidUpdates(
+    appid,
     prioritizedRequest = false,
     includeCountBefore = true,
     includeCountAfter = true
 ) {
     let result = null;
-    if (gameID == null) {
+    if (appid == null) {
         return {
             status: 500,
             retryAfter: -1,
@@ -467,14 +474,14 @@ async function getGameIDUpdates(
             await app.locals.requestQueue.add(
                 makeRequest(
                     'https://store.steampowered.com/events/ajaxgetadjacentpartnerevents' +
-                    `?appid=${gameID}` +
+                    `?appid=${appid}` +
                     (includeCountBefore ? '&count_before=0' : '') +
                     (includeCountAfter ? '&count_after=100' : '')),
                 { priority: prioritizedRequest ? 2 : 0 }
             );
         result = response.data;
     } catch (err) {
-        console.error(`Getting the game ${gameID}'s updates failed.`, err.message, '\n', err.response?.status, '\n', err.response?.data,);
+        console.error(`Getting the game ${appid}'s updates failed.`, err.message, '\n', err.response?.status, '\n', err.response?.data,);
         let resultRetryAfter = err.response?.headers?.['retry-after'];
         if (resultRetryAfter) {
             resultRetryAfter = parseInt(resultRetryAfter, 10);
@@ -497,15 +504,15 @@ async function getGameIDUpdates(
             const shouldIncludeCountBefore = (!includeCountBefore || includeCountAfter) &&
                 !(includeCountBefore && includeCountAfter);
             const shouldIncludeCountAfter = includeCountBefore && includeCountAfter;
-            console.log(`Retrying ${gameID} request with shouldIncludeCountBefore:` +
+            console.log(`Retrying ${appid} request with shouldIncludeCountBefore:` +
                 `${shouldIncludeCountBefore}, shouldIncludeCountAfter: ${shouldIncludeCountAfter}`)
             // retry in this order, after using both params failed:
             // 1. Try with count_before as false, but count_after is true.
             // 2. If #1 fails, then try with count_before being true, and count_after as false.
             // 3. If #2 fails try both as false.
             // 4. If that fails then give up.
-            return getGameIDUpdates(
-                gameID,
+            return getAppidUpdates(
+                appid,
                 prioritizedRequest,
                 shouldIncludeCountBefore,
                 shouldIncludeCountAfter
@@ -582,37 +589,37 @@ setInterval(async () => {
     }
 }, 60 * 60 * 1000)
 
-const getGameUpdates = async (externalGameID) => {
+const getGameUpdates = async (externalAppid) => {
     if (app.locals.dailyLimit > 0
         && app.locals.waitBeforeRetrying === false) {
 
-        const priorityGameID = app.locals.gameIDsToCheckPriorityQueue.dequeue();
-        if (externalGameID != null) {
-            console.log('External gameID:', externalGameID, app.locals.gameIDsToCheckPriorityQueue.size());
-        } else if (priorityGameID != null) {
-            console.log('Priority gameID:', priorityGameID, app.locals.gameIDsToCheckPriorityQueue.size());
+        const priorityAppid = app.locals.appidsToCheckPriorityQueue.dequeue();
+        if (externalAppid != null) {
+            console.log('External appid:', externalAppid, app.locals.appidsToCheckPriorityQueue.size());
+        } else if (priorityAppid != null) {
+            console.log('Priority appid:', priorityAppid, app.locals.appidsToCheckPriorityQueue.size());
         }
 
-        let gameID = externalGameID ?? priorityGameID
-            ?? app.locals.allSteamGames[app.locals.gameIDsToCheckIndex]?.appid;
+        let appid = externalAppid ?? priorityAppid
+            ?? app.locals.allSteamGames[app.locals.appidsToCheckIndex]?.appid;
 
-        if (gameID == null) {
-            app.locals.gameIDsToCheckIndex = 0; // Loop back to the beginning
-            gameID = app.locals.allSteamGames[0].appid;
+        if (appid == null) {
+            app.locals.appidsToCheckIndex = 0; // Loop back to the beginning
+            appid = app.locals.allSteamGames[0].appid;
         }
 
-        // Skip the gameID if it has already been checked and failed, and this wasn't a manual request.
-        if (app.locals.gameIDsWithErrors.has(gameID) && !externalGameID && !priorityGameID) {
-            app.locals.gameIDsToCheckIndex++;
+        // Skip the appid if it has already been checked and failed, and this wasn't a manual request.
+        if (app.locals.appidsWithErrors.has(appid) && !externalAppid && !priorityAppid) {
+            app.locals.appidsToCheckIndex++;
         } else {
-            //  If a user has requested a specific gameID we need to process it asap.
-            const result = await getGameIDUpdates(gameID, !!externalGameID);
+            //  If a user has requested a specific appid we need to process it asap.
+            const result = await getAppidUpdates(appid, !!externalAppid);
             app.locals.dailyLimit--;
 
             if (result.success === 1) {
                 // Only increment the index if this was not a manual request.
-                if (externalGameID == null && priorityGameID == null) {
-                    app.locals.gameIDsToCheckIndex++;
+                if (externalAppid == null && priorityAppid == null) {
+                    app.locals.appidsToCheckIndex++;
                 }
 
                 // To keep track of the most recent 10 updates -> .slice(0, 10)
@@ -621,40 +628,37 @@ const getGameUpdates = async (externalGameID) => {
                     return { posttime, body, gid, headline, event_type: event.event_type };
                 });
                 const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0);
-                const mostRecentPreviouslyKnownEventTime = (await getRedisValue(gameID))?.[0]?.posttime ?? 0;
+                const mostRecentPreviouslyKnownEventTime = (await getRedisValue(appid))?.[0]?.posttime ?? 0;
 
                 // Since we just got the most recent updates, this can be set to that event's post time.
-                app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] =
+                app.locals.allSteamGamesUpdatesPossiblyChanged[appid] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
-                redisClient.hset('allSteamGamesUpdates', gameID, JSON.stringify(mostRecentEvents));
+                redisClient.hset('allSteamGamesUpdates', appid, JSON.stringify(mostRecentEvents));
 
                 if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
+                    const name = app.locals.allSteamGameNames[appid];
                     const eventType = mostRecentEvents[0]?.event_type;
                     const eventTitle = mostRecentEvents[0]?.headline || 'New Update';
                     // Notify mobile users of the new updates.
-                    sendIndividualNotifications(gameID, eventTitle, eventType);
+                    sendIndividualNotifications({ appid, name, eventTitle, eventType });
+
                     // Also let web clients know a new update has been processed.
-                    if (app.locals.gamesWithSubscriptions[gameID] != null) {
-                        const usersToNotify = [...app.locals.gamesWithSubscriptions[gameID]]
-                            .filter(userId => !app.locals.subscribedUserFilters[userId]?.includes(eventType))
-                            .filter(userId => userId.endsWith(SUBSCRIPTION_BROWSER_ID_SUFFIX))
-                            .map(userId => userId.replace(SUBSCRIPTION_BROWSER_ID_SUFFIX, ''));
-                        const name = app.locals.allSteamGameNames[gameID] || 'Unknown Game';
+                    if (app.locals.gamesWithSubscriptions[appid] != null) {
+                        const usersToNotify = [...app.locals.gamesWithSubscriptions[appid]]
+                            .filter(userId => app.locals.subscribedUserFilters[userId]?.includes(eventType) === false)
 
                         wss.clients.forEach(client => {
                             if (client.readyState === WebSocket.OPEN && usersToNotify.includes(client.id)) {
                                 client.send(JSON.stringify({
-                                    appid: gameID,
+                                    appid,
                                     name,
-                                    eventsLength: mostRecentEvents.length,
-                                    mostRecentEventTime,
                                     eventTitle,
                                 }));
                             }
                         });
                     }
                 }
-                console.log(`Getting the game ${gameID}'s updates completed with ${mostRecentEvents.length ?? 0} event(s), with ${DAILY_LIMIT - app.locals.dailyLimit} requests so far.`);
+                console.log(`Getting the game ${appid}'s updates completed with ${mostRecentEvents.length ?? 0} event(s), with ${DAILY_LIMIT - app.locals.dailyLimit} requests so far.`);
             } else if (result.status === 429 || result.status === 403) {
                 if (result.status === 429 || result.retryAfter != null) {
                     app.locals.waitBeforeRetrying = true;
@@ -668,11 +672,11 @@ const getGameUpdates = async (externalGameID) => {
                     ${result.retryAfter != null ? `retrying after: ${result.retryAfter} seconds.` : 'retrying again tomorrow'}
                 `);
             } else {
-                // This gameID has not been found for whatever reason, so don't try it again.
-                app.locals.gameIDsWithErrors.add(gameID);
+                // This appid has not been found for whatever reason, so don't try it again.
+                app.locals.appidsWithErrors.add(appid);
                 // Only increment the index if this was not a manual request.
-                if (externalGameID == null && priorityGameID == null) {
-                    app.locals.gameIDsToCheckIndex++;
+                if (externalAppid == null && priorityAppid == null) {
+                    app.locals.appidsToCheckIndex++;
                 }
             }
         }
@@ -706,16 +710,16 @@ setInterval(async () => {
             await fileWriterSend({
                 type: 'writeFile',
                 payload: {
-                    filename: './storage/gameIDsWithErrors.json',
-                    data: Array.from(app.locals.gameIDsWithErrors),
+                    filename: './storage/appidsWithErrors.json',
+                    data: Array.from(app.locals.appidsWithErrors),
                 }
             });
 
             await fileWriterSend({
                 type: 'writeFile',
                 payload: {
-                    filename: './storage/gameIDsToCheckIndex.json',
-                    data: (app.locals.gameIDsToCheckIndex || 0).toString(),
+                    filename: './storage/appidsToCheckIndex.json',
+                    data: (app.locals.appidsToCheckIndex || 0).toString(),
                 }
             });
 
@@ -872,18 +876,18 @@ app.get('/api/update-queue', ensureAuthenticated, async (req, res) => {
 });
 
 app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
-    const gameID = req.query.appid;
-    app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, 9999999999); // Give this request a high priority
+    const appid = req.query.appid;
+    app.locals.appidsToCheckPriorityQueue.enqueue(appid, Infinity); // Give this request a high priority
     res.sendStatus(200);
 });
 
 const notificationUnsubscribe = (req) => {
     const userID = req.body.id || req.user?.id;
-    const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
+    const appids = (req.body.appids ?? []).map(appid => parseInt(appid));
 
-    for (const gameID of gameIDs) {
-        if (app.locals.gamesWithSubscriptions[gameID] != null) {
-            app.locals.gamesWithSubscriptions[gameID].delete(userID);
+    for (const appid of appids) {
+        if (app.locals.gamesWithSubscriptions[appid] != null) {
+            app.locals.gamesWithSubscriptions[appid].delete(userID);
         }
     }
     delete app.locals.subscribedUserFilters[userID];
@@ -891,40 +895,38 @@ const notificationUnsubscribe = (req) => {
 
 const notificationSubscribe = (req) => {
     const userID = req.body.id || req.user?.id;
-    const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
-    const filters = (req.body.filters ?? []).map(gameID => parseInt(gameID));
+    const appids = (req.body.appids ?? []).map(appid => parseInt(appid));
+    const filters = (req.body.filters ?? []).map(appid => parseInt(appid));
+    console.log('APP ID:', userID, '\n\n');
 
     app.locals.subscribedUserFilters[userID] = filters;
-    for (const gameID of gameIDs) {
+    for (const appid of appids) {
         if (userID != null) {
-            if (app.locals.gamesWithSubscriptions[gameID] == null) {
-                app.locals.gamesWithSubscriptions[gameID] = new Set();
+            if (app.locals.gamesWithSubscriptions[appid] == null) {
+                app.locals.gamesWithSubscriptions[appid] = new Set();
             }
-            app.locals.gamesWithSubscriptions[gameID].add(userID);
+            app.locals.gamesWithSubscriptions[appid].add(userID);
         }
     }
-    console.log('\n', app.locals.gamesWithSubscriptions[10], '\n\n\n\n\n');
 };
 
 app.post('/api/notifications/filters', ensureAuthenticated, async (req, res) => {
     const userID = req.body.id || req.user?.id;
-    const filters = (req.body.filters ?? []).map(gameID => parseInt(gameID));
+    const filters = (req.body.filters ?? []).map(appid => parseInt(appid));
 
     if (userID == null || filters == null) {
-        res.sendStatus(400, `Check your request body to ensure it has the correct format: { id: <userID>, filters: [<gameID1>, ...] }.`);
+        res.sendStatus(400, `Check your request body to ensure it has the correct format: { id: <userID>, filters: [<appid1>, ...] }.`);
         return;
     }
     app.locals.subscribedUserFilters[userID] = filters;
     res.sendStatus(200);
 });
 
-// create a temp map entry with the UUID from POST
+// A temp map entry with the UUID from POST
 // lookup all entries and then store in map
-// create a GET endpoint that returns paginated results
-// once the end is reached, delete the temp map entry
 const tempMap = {};
 app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
+    const appids = (req.body.appids ?? []).map(appid => parseInt(appid));
     const requestID = req.body.request_id;
 
     if (requestID == null) {
@@ -933,18 +935,18 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
     }
     notificationSubscribe(req);
 
-    const updates = {}; // {appid: gameID, events: []}
+    const updates = {}; // {appid: appid, events: []}
     // Iterate through all passed in games and add them if found
-    for (const gameID of gameIDs) {
-        // (The gameID is the second element in the array)
-        const events = await getRedisValue(gameID);
-        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
+    for (const appid of appids) {
+        // (The appid is the second element in the array)
+        const events = await getRedisValue(appid);
+        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[appid] > (events[0]?.posttime ?? 0)) {
             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
-            app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
+            app.locals.appidsToCheckPriorityQueue.enqueue(appid, events?.[0]?.posttime);
         }
 
         if (events != null) {
-            updates[gameID] = events;
+            updates[appid] = events;
         }
     }
     let gameUpdatesIDs = [];
@@ -958,6 +960,8 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
     res.send({ gameUpdatesIDs });
 });
 
+// GET endpoint that returns paginated results and
+// once the end is reached, delete the temp map entry.
 app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const requestID = req.query.request_id;
     const requestSize = parseInt(req.query.fetch_size ?? '150');
@@ -997,20 +1001,20 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
 });
 
 // app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
-//     const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID, 10));
-//     const updates = []; // An array of {appid: gameID, events: []} in order of most recently updated
+//     const appids = (req.body.appids ?? []).map(appid => parseInt(appid, 10));
+//     const updates = []; // An array of {appid: appid, events: []} in order of most recently updated
 //     // Iterate through all passed in games and add them if found
-//     for (const gameID of gameIDs) {
-//         // (The gameID is the second element in the array)
-//         // const events = app.locals.allSteamGamesUpdates[gameID];
-//         const events = await getRedisValue(gameID);
-//         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
+//     for (const appid of appids) {
+//         // (The appid is the second element in the array)
+//         // const events = app.locals.allSteamGamesUpdates[appid];
+//         const events = await getRedisValue(appid);
+//         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[appid] > (events[0]?.posttime ?? 0)) {
 //             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
-//             app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
+//             app.locals.appidsToCheckPriorityQueue.enqueue(appid, events?.[0]?.posttime);
 //         }
 //         updates.push(
 //             {
-//                 appid: gameID,
+//                 appid: appid,
 //                 events,
 //             }
 //         );

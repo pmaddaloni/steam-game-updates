@@ -17,6 +17,7 @@ import ServerWebSocket from 'ws';
  */
 
 export const SUBSCRIPTION_BROWSER_ID_SUFFIX = ' - browser';
+export const SUBSCRIPTION_IOS_ID_SUFFIX = ' - ios';
 
 export function createWebSocketConnector(
     url, {

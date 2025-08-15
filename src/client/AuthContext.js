@@ -2,7 +2,7 @@ import axios from 'axios';
 import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
 import removeAccents from 'remove-accents';
 
-import { createWebSocketConnector, notifyUser } from '../utilities/utils.js';
+import { createWebSocketConnector, notifyUser, SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
 const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
@@ -212,7 +212,7 @@ export const AuthProvider = function ({ children }) {
                 }
             }
             if (steamGameUpdatesSocket == null) {
-                steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH + `?id=${state.id}`, { onMessage });
+                steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH + `?id=${state.id}${SUBSCRIPTION_BROWSER_ID_SUFFIX}`, { onMessage });
                 steamGameUpdatesSocket.start();
             } else {
                 steamGameUpdatesSocket.updateOnMessage(onMessage);
@@ -253,7 +253,7 @@ export const AuthProvider = function ({ children }) {
                         const totalNumberOfRequests = Math.ceil(Object.keys(ownedGames).length / REQUEST_SIZE) + 2;
                         dispatch({ type: 'updateLoadingProgress', value: (1 / totalNumberOfRequests) * 100 });
                         gameDetailsWorker.postMessage(
-                            { ownedGames, totalNumberOfRequests, requestSize: REQUEST_SIZE, id: state.id }
+                            { ownedGames, totalNumberOfRequests, requestSize: REQUEST_SIZE, id: state.id, filters: state.filters }
                         );
                     } else {
                         dispatch({ type: 'updateLoadingProgress', value: 100 });
@@ -265,6 +265,7 @@ export const AuthProvider = function ({ children }) {
                 }
             })();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [getAllUserOwnedGames, state.id, state.ownedGames]);
 
     if (process.env.NODE_ENV === 'development') {

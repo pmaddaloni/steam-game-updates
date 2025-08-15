@@ -19,7 +19,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 // import SteamStrategy from 'modern-passport-steam';
 
 import config from '../../config.js';
-import { PriorityQueue, createWebSocketConnector, getViableImageURL } from '../utilities/utils.js';
+import { createWebSocketConnector, getViableImageURL, PriorityQueue, SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../utilities/utils.js';
 
 const environment = config.ENVIRONMENT || 'development'; // Default to 'development' if not set
 const PORT = process.env.PORT || 8080;
@@ -136,6 +136,9 @@ const mobileSessions = fs.existsSync(path.join(__dirname, './storage/mobileSessi
 const userOwnedGames = fs.existsSync(path.join(__dirname, './storage/userOwnedGames.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/userOwnedGames.json'), { encoding: 'utf8', flag: 'r' })
     : '{}';
+const subscribedUserFilters = fs.existsSync(path.join(__dirname, './storage/subscribedUserFilters.json')) ?
+    fs.readFileSync(path.join(__dirname, './storage/subscribedUserFilters.json'), { encoding: 'utf8', flag: 'r' })
+    : '{}'; // { userID: [filter1, filter2, ...] }
 
 const app = express();
 app.locals.requestQueue = new PQueue({ interval: REQUEST_WAIT_TIME, intervalCap: NUMBER_OF_REQUESTS_PER_WAIT_TIME });
@@ -184,15 +187,15 @@ const objectWithSets = Object.entries(parsedUserOwnedGames).reduce((acc, [key, v
     acc[key] = new Set(value);
     return acc;
 }, {});
-app.locals.userOwnedGames = objectWithSets;
+app.locals.gamesWithSubscriptions = objectWithSets;
 app.locals.waitBeforeRetrying = false;
 const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
-app.locals.dailyLimit = lastDailyLimitUsage;
+app.locals.dailyLimit = DAILY_LIMIT - lastDailyLimitUsage;
 app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
 // Since passport isn't properly tracking mobile sessions, we need to track them ourselves.
 // We generate our own UUIDs to check against for the mobile app.
 app.locals.mobileSessions = new Set(JSON.parse(mobileSessions));
-app.locals.subscribedUsers = {};
+app.locals.subscribedUserFilters = JSON.parse(subscribedUserFilters);
 
 // START Steam Game Updates WebSocket connection
 const webSocketServerOptions = { noServer: true };
@@ -204,11 +207,13 @@ const webSocketServerOptions = { noServer: true };
 //     });
 // }
 const wss = new WebSocketServer(webSocketServerOptions);
-wss.on('connection', function connection(ws, request) {
-    console.log('WebSocket connection established with a client');
+wss.on('connection', function connection(ws, req) {
+    const id = req.url.split('=')?.[1]
+    console.log(`WebSocket connection established with a client with Steam ID ${id}`);
+    ws.id = id;
     ws.on('error', console.error);
     ws.on('close', () => {
-        console.log('Client disconnected');
+        console.log(`Client with Steam ID ${id} disconnected.`);
     });
 });
 // END Steam Game Updates WebSocket connection
@@ -217,9 +222,13 @@ wss.on('connection', function connection(ws, request) {
 const ONE_SIGNAL_APP_ID = config.ONE_SIGNAL_APP_ID;
 const ONE_SIGNAL_REST_API_KEY = config.ONE_SIGNAL_REST_API_KEY;
 
-async function sendIndividualNotifications(appid) {
-    if (app.locals.userOwnedGames[appid] != null) {
-        const usersToNotify = [...app.locals.userOwnedGames[appid]].filter(userId => userId?.startsWith('web-client') === false);
+async function sendIndividualNotifications(appid, eventTitle, eventType) {
+    if (app.locals.gamesWithSubscriptions[appid] != null) {
+        let usersToNotify =
+            [...app.locals.gamesWithSubscriptions[appid]]
+                .filter(userId => !app.locals.subscribedUserFilters[userId]?.includes(eventType))
+                .filter(userId => !userId?.endsWith(SUBSCRIPTION_BROWSER_ID_SUFFIX));
+
         if (usersToNotify.length === 0) {
             return;
         }
@@ -241,11 +250,11 @@ async function sendIndividualNotifications(appid) {
                 app_id: ONE_SIGNAL_APP_ID,
                 target_channel: "push",
                 contents: {
-                    'en': `New Update for ${name} available. Refresh your game list to see it.`,
+                    'en': eventTitle,
                 },
-                // headings: {
-                //     'en': `PC Game Updates`,
-                // },
+                headings: {
+                    'en': `New Update for ${name}`,
+                },
                 ios_attachments: {
                     id: validImageURL
                 },
@@ -295,7 +304,8 @@ function initializeSteamWebPipes() {
             for (const appid of appids) {
                 app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime() / 1000; // convert to seconds from ms
                 // If at least one subscribed user owns the game, we should check it.
-                if (app.locals.userOwnedGames[appid]?.size > 0) {
+                if (app.locals.gamesWithSubscriptions[appid]?.size > 0) {
+                    console.log(`Game ${appid} has updates, checking for changes...`);
                     app.locals.gameIDsToCheckPriorityQueue.enqueue(appid, app.locals.allSteamGamesUpdatesPossiblyChanged[appid]);
                 }
             }
@@ -547,9 +557,11 @@ setInterval(() => {
     // crude, but will prevent stale sessions from piling up
     // TODO: in the future keep track of how old a session is before removing
     app.locals.mobileSessions = new Set();
+    app.locals.gamesWithSubscriptions = {};
+    app.locals.subscribedUserFilters = {};
     const dir = path.join(__dirname, './storage/passport-sessions')
     fs.readdirSync(dir).forEach(f => fs.rmSync(`${dir}/${f}`));
-}, (1000 * 60 * 60 * 24) * 22);    // Set a new interval of 24 hours
+}, (1000 * 60 * 60 * 24) * 2);
 
 // Refresh all games every hour
 // At this point it's not cleared/guaranteed that the games will always come back in the
@@ -617,23 +629,26 @@ const getGameUpdates = async (externalGameID) => {
                 redisClient.hset('allSteamGamesUpdates', gameID, JSON.stringify(mostRecentEvents));
 
                 if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
+                    const eventType = mostRecentEvents[0]?.event_type;
+                    const eventTitle = mostRecentEvents[0]?.headline || 'New Update';
                     // Notify mobile users of the new updates.
-                    sendIndividualNotifications(gameID);
+                    sendIndividualNotifications(gameID, eventTitle, eventType);
                     // Also let web clients know a new update has been processed.
-                    if (app.locals.userOwnedGames[gameID] != null) {
-                        const usersToNotify = [...app.locals.userOwnedGames[gameID]]
-                            .filter(userId => userId.startsWith('web-client'))
-                            .map(userId => userId.replace('web-client-', ''));
+                    if (app.locals.gamesWithSubscriptions[gameID] != null) {
+                        const usersToNotify = [...app.locals.gamesWithSubscriptions[gameID]]
+                            .filter(userId => !app.locals.subscribedUserFilters[userId]?.includes(eventType))
+                            .filter(userId => userId.endsWith(SUBSCRIPTION_BROWSER_ID_SUFFIX))
+                            .map(userId => userId.replace(SUBSCRIPTION_BROWSER_ID_SUFFIX, ''));
                         const name = app.locals.allSteamGameNames[gameID] || 'Unknown Game';
 
                         wss.clients.forEach(client => {
-                            if (client.readyState === WebSocket.OPEN) {
+                            if (client.readyState === WebSocket.OPEN && usersToNotify.includes(client.id)) {
                                 client.send(JSON.stringify({
                                     appid: gameID,
                                     name,
                                     eventsLength: mostRecentEvents.length,
                                     mostRecentEventTime,
-                                    usersToNotify
+                                    eventTitle,
                                 }));
                             }
                         });
@@ -732,18 +747,23 @@ setInterval(async () => {
                     data: Array.from(app.locals.mobileSessions),
                 }
             });
-            if (app.locals.userOwnedGames) {
-                await fileWriterSend({
-                    type: 'writeFile',
-                    payload: {
-                        filename: './storage/userOwnedGames.json',
-                        data: Object.entries(app.locals.userOwnedGames).reduce((acc, [key, value]) => {
-                            acc[key] = Array.from(value);
-                            return acc;
-                        }, {}),
-                    }
-                });
-            }
+            await fileWriterSend({
+                type: 'writeFile',
+                payload: {
+                    filename: './storage/gamesWithSubscriptions.json',
+                    data: Object.entries(app.locals.gamesWithSubscriptions).reduce((acc, [key, value]) => {
+                        acc[key] = Array.from(value);
+                        return acc;
+                    }, {}),
+                }
+            });
+            await fileWriterSend({
+                type: 'writeFile',
+                payload: {
+                    filename: './storage/subscribedUserFilters.json',
+                    data: app.locals.subscribedUserFilters,
+                }
+            });
         } catch (err) {
             if (err) {
                 console.error('Error writing to files occurred...', err);
@@ -831,9 +851,9 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
             .then(response => { result = response })
             .catch(err => {
                 console.error(`\nGetting the user ${req.query.id}'s owned games FAILED with code "${err.response?.status}"`
-                    + ` and message "${err.response.statusText} (no code means the server didn't responsd).\n`, err);
+                    + ` and message "${err.response?.statusText} (no code means the server didn't responsd).\n`, err);
                 app.locals.waitBeforeRetrying = true;
-                setTimeout(() => app.locals.waitBeforeRetrying = false, err.response.retryAfter != null ? err.response.retryAfter * 1000 : RETRY_WAIT_TIME);
+                setTimeout(() => app.locals.waitBeforeRetrying = false, err.response?.retryAfter != null ? err.response?.retryAfter * 1000 : RETRY_WAIT_TIME);
             });
         app.locals.dailyLimit--;
         console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count ?? 'no'} games`);
@@ -860,25 +880,43 @@ app.post('/api/game-updates', ensureAuthenticated, async (req, res) => {
 const notificationUnsubscribe = (req) => {
     const userID = req.body.id || req.user?.id;
     const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
+
     for (const gameID of gameIDs) {
-        if (app.locals.userOwnedGames[gameID] != null) {
-            app.locals.userOwnedGames[gameID].delete(userID);
+        if (app.locals.gamesWithSubscriptions[gameID] != null) {
+            app.locals.gamesWithSubscriptions[gameID].delete(userID);
         }
     }
+    delete app.locals.subscribedUserFilters[userID];
 };
 
 const notificationSubscribe = (req) => {
     const userID = req.body.id || req.user?.id;
     const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
+    const filters = (req.body.filters ?? []).map(gameID => parseInt(gameID));
+
+    app.locals.subscribedUserFilters[userID] = filters;
     for (const gameID of gameIDs) {
         if (userID != null) {
-            if (app.locals.userOwnedGames[gameID] == null) {
-                app.locals.userOwnedGames[gameID] = new Set();
+            if (app.locals.gamesWithSubscriptions[gameID] == null) {
+                app.locals.gamesWithSubscriptions[gameID] = new Set();
             }
-            app.locals.userOwnedGames[gameID].add(userID);
+            app.locals.gamesWithSubscriptions[gameID].add(userID);
         }
     }
+    console.log('\n', app.locals.gamesWithSubscriptions[10], '\n\n\n\n\n');
 };
+
+app.post('/api/notifications/filters', ensureAuthenticated, async (req, res) => {
+    const userID = req.body.id || req.user?.id;
+    const filters = (req.body.filters ?? []).map(gameID => parseInt(gameID));
+
+    if (userID == null || filters == null) {
+        res.sendStatus(400, `Check your request body to ensure it has the correct format: { id: <userID>, filters: [<gameID1>, ...] }.`);
+        return;
+    }
+    app.locals.subscribedUserFilters[userID] = filters;
+    res.sendStatus(200);
+});
 
 // create a temp map entry with the UUID from POST
 // lookup all entries and then store in map
@@ -980,30 +1018,6 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
 //     res.send({ updates });
 // });
 
-app.post('/api/game-update-ids-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const gameIDs = (req.body.appids ?? []).map(gameID => parseInt(gameID));
-    const lastCheckTime = parseInt(req.query.last_check_time)   // this is ms
-    const gameIDsWithUpdates = [];
-    notificationSubscribe(req);
-
-    // Iterate through all passed in games and add them if found
-    for (const gameID of gameIDs) {
-        // const events = app.locals.allSteamGamesUpdates[gameID];
-        const events = await getRedisValue(gameID);
-        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] > (events[0]?.posttime ?? 0)) {
-            app.locals.gameIDsToCheckPriorityQueue.enqueue(gameID, events?.[0]?.posttime);
-        }
-
-        const mostRecentUpdateTime =
-            Math.max((app.locals.allSteamGamesUpdatesPossiblyChanged[gameID] ?? 0), (events?.[0]?.posttime ?? 0))
-        if (events != null && mostRecentUpdateTime > lastCheckTime) {
-            // We know for sure that there has been some activity since the client last checked
-            gameIDsWithUpdates.push(gameID);
-        }
-    }
-    res.send({ gameIDsWithUpdates });
-});
-
 app.get('/api/game-details', ensureAuthenticated, async (req, res) => {
     if (req.app.locals.waitBeforeRetrying === false && req.app.locals.dailyLimit > 0) {
         let result = null;
@@ -1048,7 +1062,7 @@ app.post('/api/logout', function (req, res) {
     res.sendStatus(200);
 });
 
-app.post('/api/notification-unsubscribe', ensureAuthenticated, function (req, res) {
+app.post('/api/notification/unsubscribe', ensureAuthenticated, function (req, res) {
     try {
         notificationUnsubscribe(req);
         res.sendStatus(200);
@@ -1058,7 +1072,7 @@ app.post('/api/notification-unsubscribe', ensureAuthenticated, function (req, re
     }
 });
 
-app.post('api/notification-subscribe', ensureAuthenticated, async (req, res) => {
+app.post('api/notification/subscribe', ensureAuthenticated, async (req, res) => {
     try {
         notificationSubscribe(req);
         res.sendStatus(200);

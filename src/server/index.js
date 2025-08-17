@@ -928,6 +928,7 @@ const tempMap = {};
 app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const appids = (req.body.appids ?? []).map(appid => parseInt(appid));
     const requestID = req.body.request_id;
+    const requestSize = req.body.request_size ?? parseInt(req.body.request_size);
 
     if (requestID == null) {
         res.sendStatus(406);
@@ -956,7 +957,16 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
             events.map(({ posttime }) => [posttime, appid]));
     }
     gameUpdatesIDs = gameUpdatesIDs.sort((a, b) => b[0] - a[0]);
-    tempMap[requestID] = { updates, gameUpdatesIDs }
+    // If the user only wants a subset of their updates (e.g. the first 1000)
+    // then stop when we've reached that many updates
+    if (requestSize) {
+        tempMap[requestID] = { updates, gameUpdatesIDs, retrievalAmount: requestSize };
+    } else {
+        tempMap[requestID] = { updates, gameUpdatesIDs };
+    }
+    // Prevent memory leak if this hasn't been cleared out by requests within 5 minutes -
+    // something happened to the user's requests and they'll have to try again.
+    setTimeout(() => delete tempMap[requestID], 1000 * 60 * 5);
     res.send({ gameUpdatesIDs });
 });
 
@@ -966,33 +976,51 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
     const requestID = req.query.request_id;
     const requestSize = parseInt(req.query.fetch_size ?? '150');
     let updatesChunk = {};
-
+    let hasMore = true;
     try {
-        let appsFound = 0;
-        while (appsFound < requestSize
-            && Object.keys(tempMap[requestID].updates).length > 0) {
-            // find the next requestSize (e.g. 150) # of unsent games to return to client
-            for (const [index, [, appid]] of tempMap[requestID].gameUpdatesIDs.entries()) {
+        if (tempMap[requestID].retrievalAmount != null) {
+            for (let i = 0; i < requestSize && tempMap[requestID].retrievalAmount > 0; i++) {
+                console.log(tempMap[requestID].gameUpdatesIDs)
+                const [, appid] = tempMap[requestID].gameUpdatesIDs[i];
+                console.log('\n\ngot appid', appid)
                 if (tempMap[requestID].updates[appid] != null
                     && updatesChunk[appid] == null) {
                     updatesChunk[appid] = tempMap[requestID].updates[appid];
-                    delete tempMap[requestID].updates[appid];
-                    appsFound++;
-                    break;
-                }
-                // If the entire updates array didn't have any remaining games in it,
-                // then those remaining games have no updates to report, so we're done.
-                if (index === tempMap[requestID].gameUpdatesIDs.length - 1) {
-                    appsFound = Infinity;
+                    tempMap[requestID].retrievalAmount--;
                 }
             }
-        }
+            console.log('\n\namount', tempMap[requestID].retrievalAmount)
+            tempMap[requestID].gameUpdatesIDs.splice(0, requestSize);
+            if (tempMap[requestID].retrievalAmount === 0) {
+                delete tempMap[requestID];
+                hasMore = false;
+            }
+        } else {
+            let appsFound = 0;
+            while (appsFound < requestSize
+                && Object.keys(tempMap[requestID].updates).length > 0) {
+                // find the next requestSize (e.g. 150) # of unsent games to return to client
+                for (const [index, [, appid]] of tempMap[requestID].gameUpdatesIDs.entries()) {
+                    if (tempMap[requestID].updates[appid] != null
+                        && updatesChunk[appid] == null) {
+                        updatesChunk[appid] = tempMap[requestID].updates[appid];
+                        delete tempMap[requestID].updates[appid];
+                        appsFound++;
+                        break;
+                    }
+                    // If the entire updates array didn't have any remaining games in it,
+                    // then those remaining games have no updates to report, so we're done.
+                    if (index === tempMap[requestID].gameUpdatesIDs.length - 1) {
+                        appsFound = Infinity;
+                    }
+                }
+            }
 
-        let hasMore = true;
-        if (Object.keys(tempMap[requestID].updates).length === 0
-            || appsFound === Infinity) {
-            delete tempMap[requestID];
-            hasMore = false;
+            if (Object.keys(tempMap[requestID].updates).length === 0
+                || appsFound === Infinity) {
+                delete tempMap[requestID];
+                hasMore = false;
+            }
         }
         res.send({ updates: updatesChunk, hasMore })
     } catch {

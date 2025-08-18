@@ -651,12 +651,12 @@ const getGameUpdates = async (externalAppid) => {
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
                 redisClient.hset('allSteamGamesUpdates', appid, JSON.stringify(mostRecentEvents));
 
-                if (true || (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime)) {
+                if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
                     const name = app.locals.allSteamGameNames[appid];
                     const eventType = mostRecentEvents[0]?.event_type;
                     const eventTitle = mostRecentEvents[0]?.headline || 'New Update';
                     console.log(`Game ${name} (${appid}) has new updates (${eventType}):`, mostRecentEvents.length, 'events, most recent at', new Date(mostRecentEventTime * 1000).toLocaleString());
-                    console.log(app.locals.subscribedUserFilters, '\n', app.locals.gamesWithSubscriptions[appid], '\n')
+                    // console.log(app.locals.subscribedUserFilters, '\n', app.locals.gamesWithSubscriptions[appid], '\n')
                     // Notify mobile users of the new updates.
                     sendIndividualNotifications({ appid, name, eventTitle, eventType });
 

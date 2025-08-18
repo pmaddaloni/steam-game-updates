@@ -1,4 +1,6 @@
 import { cloneElement, useCallback, useEffect, useRef, useState } from 'react';
+
+import { getPlatform } from '../../utilities/utils.js';
 import { useAuth } from '../AuthContext.js';
 import styles from './body-styles.module.scss';
 import GameUpdateContentComponent from './GameUpdateContentComponent.js';
@@ -58,7 +60,7 @@ export default function Body() {
     // Set appropriate styles for Windows specifically
     useEffect(() => {
         if (gameComponents.length !== 0) {
-            const isWindows = navigator.userAgentData.platform.toLowerCase().includes('windows');
+            const isWindows = getPlatform() === 'Windows';
             const gameList = document.getElementById('game-list');
 
             if (isWindows && gameList) {

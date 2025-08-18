@@ -3,6 +3,24 @@ import axios from 'axios';
 export const SUBSCRIPTION_BROWSER_ID_SUFFIX = ' - browser';
 export const SUBSCRIPTION_IOS_ID_SUFFIX = ' - ios';
 
+export function getPlatform() {
+    // Prefer modern API if available
+    if (navigator.userAgentData && navigator.userAgentData.platform) {
+        return navigator.userAgentData.platform;
+    }
+
+    // Fallback: parse userAgent string
+    const ua = navigator.userAgent;
+
+    if (/windows/i.test(ua)) return "Windows";
+    if (/mac/i.test(ua)) return "Mac";
+    if (/linux/i.test(ua)) return "Linux";
+    if (/iphone|ipad|ipod/i.test(ua)) return "iOS";
+    if (/android/i.test(ua)) return "Android";
+
+    return "Unknown";
+}
+
 /**
  * A robust WebSocket connection manager with an exponential backoff retry mechanism.
  * It centralizes all connection, reconnection, and error handling logic.

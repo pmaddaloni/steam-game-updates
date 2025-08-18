@@ -356,7 +356,7 @@ export default function Header() {
                                         }}
                                         {...listItemProps}
                                     >
-                                        {key}
+                                        {title}
                                         <Switch
                                             checked={filters[key]}
                                             {...listItemSwitchProps}

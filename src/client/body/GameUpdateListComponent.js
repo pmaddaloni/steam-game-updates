@@ -1,6 +1,6 @@
 import classnames from 'classnames';
 import { useEffect, useState } from 'react';
-import { getViableImageURL } from '../../utilities/utils';
+import { getViableImageURL } from '../../utilities/utils.js';
 import styles from './body-styles.module.scss';
 
 export default function GameUpdateListComponent(props) {

@@ -1,6 +1,6 @@
 import parse from 'html-react-parser';
 import { useEffect, useState } from 'react';
-import { debounce, getViableImageURL } from '../../utilities/utils';
+import { debounce, getViableImageURL } from '../../utilities/utils.js';
 
 import styles from './body-styles.module.scss';
 

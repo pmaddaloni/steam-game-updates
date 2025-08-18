@@ -5,7 +5,7 @@ import { Popover } from 'react-tiny-popover';
 import LoadingBar from "react-top-loading-bar";
 
 import classNames from 'classnames';
-import { useAuth } from '../AuthContext';
+import { useAuth } from '../AuthContext.js';
 import styles from './header-styles.module.scss';
 import steamGameUpdatesImg from './steam-game-updates.svg';
 

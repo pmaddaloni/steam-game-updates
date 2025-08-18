@@ -1,8 +1,8 @@
 import { cloneElement, useCallback, useEffect, useRef, useState } from 'react';
-import { useAuth } from '../AuthContext';
+import { useAuth } from '../AuthContext.js';
 import styles from './body-styles.module.scss';
-import GameUpdateContentComponent from './GameUpdateContentComponent';
-import GameUpdateListComponent from './GameUpdateListComponent';
+import GameUpdateContentComponent from './GameUpdateContentComponent.js';
+import GameUpdateListComponent from './GameUpdateListComponent.js';
 
 import logo from './steam-logo.svg';
 
@@ -61,12 +61,12 @@ export default function Body() {
             const isWindows = navigator.userAgentData.platform.toLowerCase().includes('windows');
             const gameList = document.getElementById('game-list');
 
-            if (gameList) {
-                gameList.classList.add(isWindows ? styles['os-windows'] : '');
+            if (isWindows && gameList) {
+                gameList.classList.add(styles['os-windows']);
             }
             const gameContainer = document.getElementById('update-container');
-            if (gameContainer) {
-                gameContainer.classList.add(isWindows ? styles['os-windows'] : '');
+            if (isWindows && gameList) {
+                gameContainer.classList.add(styles['os-windows']);
             }
         }
     }, [gameComponents.length]);

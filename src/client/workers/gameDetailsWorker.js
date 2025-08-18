@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../../utilities/utils';
+import { SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../../utilities/utils.js';
 
 // Using self is valid within a web worker.
 // eslint-disable-next-line no-restricted-globals

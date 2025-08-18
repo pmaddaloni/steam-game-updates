@@ -1,5 +1,7 @@
 import axios from 'axios';
-import ServerWebSocket from 'ws';
+
+export const SUBSCRIPTION_BROWSER_ID_SUFFIX = ' - browser';
+export const SUBSCRIPTION_IOS_ID_SUFFIX = ' - ios';
 
 /**
  * A robust WebSocket connection manager with an exponential backoff retry mechanism.
@@ -15,13 +17,9 @@ import ServerWebSocket from 'ws';
  * @param {function} [options.onError] A callback function for when a critical error occurs.
  * @returns {object} An object with methods to start and stop the connection.
  */
-
-export const SUBSCRIPTION_BROWSER_ID_SUFFIX = ' - browser';
-export const SUBSCRIPTION_IOS_ID_SUFFIX = ' - ios';
-
 export function createWebSocketConnector(
     url, {
-        socketType = 'frontend',
+        ServerWebSocket,
         retryInterval = 1000,
         maxRetries = 10,
         onOpen, onClose,
@@ -45,7 +43,7 @@ export function createWebSocketConnector(
         }
 
         isConnecting = true;
-        ws = socketType === 'frontend' ? new WebSocket(url) : new ServerWebSocket(url);
+        ws = ServerWebSocket != null ? new ServerWebSocket(url) : new WebSocket(url);
         showConsoleMsgs && console.log("Attempting to connect to WebSocket at " + url);
 
         // --- Event Handlers ---
@@ -73,7 +71,7 @@ export function createWebSocketConnector(
                     timeoutId = setTimeout(connect, delay);
                 } else {
                     showConsoleMsgs && console.error("Max retry attempts reached. Connection failed permanently.");
-                    window.alert("There was an error with the connection to the Steam Game Updates server. Please try refreshing the page.");
+                    window && window.alert("There was an error with the connection to the Steam Game Updates server. Please try refreshing the page.");
                     if (onError) onError("Max retries reached. Please check your connection.");
                 }
             }

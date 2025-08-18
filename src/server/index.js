@@ -5,8 +5,9 @@ import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
 import fs from 'fs';
-import { createServer } from 'http';
-import Redis from 'ioredis'; // Changed from 'redis' to 'ioredis'
+import http, { createServer } from 'http';
+import https from 'https';
+import Redis from 'ioredis';
 import PQueue from 'p-queue';
 import passport from 'passport';
 import SteamStrategy from 'passport-steam';
@@ -16,7 +17,6 @@ import sessionfilestore from 'session-file-store';
 import url, { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import WebSocket, { WebSocketServer } from 'ws';
-// import SteamStrategy from 'modern-passport-steam';
 
 import config from '../../config.js';
 import {
@@ -25,6 +25,7 @@ import {
     PriorityQueue,
     SUBSCRIPTION_IOS_ID_SUFFIX
 } from '../utilities/utils.js';
+import { shutdownPool, sortGameUpdates } from './workers/hybridSorter.js';
 
 const environment = config.ENVIRONMENT || 'development'; // Default to 'development' if not set
 const PORT = process.env.PORT || 8080;
@@ -32,19 +33,36 @@ const PORT = process.env.PORT || 8080;
 const __filename = fileURLToPath(import.meta.url);  // get the resolved path to the file
 const __dirname = path.dirname(__filename);         // get the name of the directory
 
+const agentOptions = {
+    keepAlive: true,
+    maxSockets: 50,   // concurrent sockets per host
+    maxFreeSockets: 2, // keep some idle ones around
+    timeout: 60000,   // close idle sockets after 60s
+}
+const axiosInstance = axios.create({
+    httpAgent: new http.Agent(agentOptions),
+    httpsAgent: new https.Agent(agentOptions),
+    timeout: 15000, // avoid hung requests
+});
+
 if (environment !== 'development') {
-    try {
-        console.log('Running cleanup script before starting server...');
-        execSync('bash ./cleanup.sh', { stdio: 'inherit' });
-        console.log('Cleanup complete.');
-    } catch (error) {
-        console.error('Cleanup script failed:', error);
-        // Decide if you want to exit or continue here
-        // process.exit(1);
-    }
-} else {
     console.clear();
 }
+try {
+    console.log('Running cleanup script before starting server...');
+    execSync('bash ./cleanup.sh', { stdio: 'inherit' });
+    console.log('Cleanup complete.');
+} catch (error) {
+    console.error('Cleanup script failed:', error);
+    // Decide if you want to exit or continue here
+    // process.exit(1);
+}
+
+process.on('SIGINT', async () => {
+    console.log("Shutting down worker pool...");
+    await shutdownPool();
+    process.exit(0);
+});
 
 // --- ioredis Client Setup ---
 // The ioredis client connects automatically, so no need for an explicit connect() call.
@@ -150,9 +168,7 @@ app.locals.requestQueue = new PQueue({ interval: REQUEST_WAIT_TIME, intervalCap:
 app.locals.appidsToCheckPriorityQueue = new PriorityQueue();
 
 function makeRequest(url, method = 'get') {
-    return async () => {
-        return axios[method](url);
-    }
+    return () => axiosInstance[method](url);
 };
 
 // https://stackoverflow.com/questions/33030092/webworkers-with-a-node-js-express-application
@@ -300,7 +316,7 @@ function initializeSteamWebPipes() {
     // SteamWebPipes WebSocket setup
     console.log('Setting up SteamWebPipes server...');
     ws = createWebSocketConnector('ws://localhost:8181', {
-        socketType: 'server',
+        ServerWebSocket: WebSocket,
         showConsoleMsgs: true || environment === 'development',
         onMessage: (message) => {
             const { Apps: apps } = JSON.parse(message.data);
@@ -635,10 +651,12 @@ const getGameUpdates = async (externalAppid) => {
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
                 redisClient.hset('allSteamGamesUpdates', appid, JSON.stringify(mostRecentEvents));
 
-                if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
+                if (true || (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime)) {
                     const name = app.locals.allSteamGameNames[appid];
                     const eventType = mostRecentEvents[0]?.event_type;
                     const eventTitle = mostRecentEvents[0]?.headline || 'New Update';
+                    console.log(`Game ${name} (${appid}) has new updates (${eventType}):`, mostRecentEvents.length, 'events, most recent at', new Date(mostRecentEventTime * 1000).toLocaleString());
+                    console.log(app.locals.subscribedUserFilters, '\n', app.locals.gamesWithSubscriptions[appid], '\n')
                     // Notify mobile users of the new updates.
                     sendIndividualNotifications({ appid, name, eventTitle, eventType });
 
@@ -863,7 +881,11 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
         console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count ?? 'no'} games`);
         res.send(result.data?.response);
     } else {
-        res.status(400).send(new Error(`The limit for requests has been reached: retry later ${req.app.locals.waitBeforeRetrying}, daily limit ${req.app.locals.dailyLimit}`));
+        res.status(429).json({
+            error: `The limit for requests has been reached`,
+            waitBeforeRetrying: req.app.locals.waitBeforeRetrying,
+            dailyLimit: req.app.locals.dailyLimit,
+        });
     }
 });
 
@@ -926,46 +948,49 @@ app.post('/api/notifications/filters', ensureAuthenticated, async (req, res) => 
 // lookup all entries and then store in map
 const tempMap = {};
 app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
-    const appids = (req.body.appids ?? []).map(appid => parseInt(appid));
+    const appids = (req.body.appids ?? []).map(Number);
     const requestID = req.body.request_id;
-    const requestSize = req.body.request_size ?? parseInt(req.body.request_size);
+    const requestSize = parseInt(req.body.request_size ?? 0, 10);
 
-    if (requestID == null) {
+    if (!requestID) {
         res.sendStatus(406);
         return;
     }
     notificationSubscribe(req);
 
-    const updates = {}; // {appid: appid, events: []}
-    // Iterate through all passed in games and add them if found
-    for (const appid of appids) {
-        // (The appid is the second element in the array)
-        const events = await getRedisValue(appid);
-        if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[appid] > (events[0]?.posttime ?? 0)) {
-            // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
-            app.locals.appidsToCheckPriorityQueue.enqueue(appid, events?.[0]?.posttime);
-        }
+    // Parallelized Redis fetches
+    const results = await Promise.all(
+        appids.map(async (appid) => {
+            const events = await getRedisValue(appid);
+            if (
+                events == null ||
+                app.locals.allSteamGamesUpdatesPossiblyChanged[appid] > (events[0]?.posttime ?? 0)
+            ) {
+                app.locals.appidsToCheckPriorityQueue.enqueue(appid, events?.[0]?.posttime);
+            }
+            return [appid, events];
+        })
+    );
 
-        if (events != null) {
-            updates[appid] = events;
-        }
-    }
-    let gameUpdatesIDs = [];
-    // Sort the updates for each game by posttime, descending
-    for (const [appid, events] of Object.entries(updates)) {
-        gameUpdatesIDs = gameUpdatesIDs.concat(
-            events.map(({ posttime }) => [posttime, appid]));
-    }
-    gameUpdatesIDs = gameUpdatesIDs.sort((a, b) => b[0] - a[0]);
-    // If the user only wants a subset of their updates (e.g. the first 1000)
-    // then stop when we've reached that many updates
-    if (requestSize) {
-        tempMap[requestID] = { updates, gameUpdatesIDs, retrievalAmount: requestSize };
-    } else {
-        tempMap[requestID] = { updates, gameUpdatesIDs };
-    }
-    // Prevent memory leak if this hasn't been cleared out by requests within 5 minutes -
-    // something happened to the user's requests and they'll have to try again.
+    // Build updates object
+    const updates = Object.fromEntries(results.filter(([, events]) => events != null));
+
+    // Flatten posttime/appid pairs
+    let gameUpdatesIDs = results.flatMap(([appid, events]) =>
+        events ? events.map(({ posttime }) => [posttime, appid]) : []
+    );
+
+    // Sort by posttime descending
+    gameUpdatesIDs = await sortGameUpdates(gameUpdatesIDs, requestSize)
+
+    tempMap[requestID] = {
+        updates,
+        gameUpdatesIDs,
+        retrievalAmount: requestSize || null,
+        cursor: 0,
+    };
+
+    // Clean up after 5 min
     setTimeout(() => delete tempMap[requestID], 1000 * 60 * 5);
     res.send({ gameUpdatesIDs });
 });
@@ -974,57 +999,50 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
 // once the end is reached, delete the temp map entry.
 app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const requestID = req.query.request_id;
-    const requestSize = parseInt(req.query.fetch_size ?? '150');
+    const requestSize = parseInt(req.query.fetch_size ?? '150', 10);
+
+    const entry = tempMap[requestID];
+    if (entry == null) {
+        return res.sendStatus(404);
+    }
+
+    const { updates, gameUpdatesIDs, retrievalAmount, cursor } = entry;
     let updatesChunk = {};
     let hasMore = true;
-    try {
-        if (tempMap[requestID].retrievalAmount != null) {
-            for (let i = 0; i < requestSize && tempMap[requestID].retrievalAmount > 0; i++) {
-                console.log(tempMap[requestID].gameUpdatesIDs)
-                const [, appid] = tempMap[requestID].gameUpdatesIDs[i];
-                console.log('\n\ngot appid', appid)
-                if (tempMap[requestID].updates[appid] != null
-                    && updatesChunk[appid] == null) {
-                    updatesChunk[appid] = tempMap[requestID].updates[appid];
-                    tempMap[requestID].retrievalAmount--;
-                }
-            }
-            console.log('\n\namount', tempMap[requestID].retrievalAmount)
-            tempMap[requestID].gameUpdatesIDs.splice(0, requestSize);
-            if (tempMap[requestID].retrievalAmount === 0) {
-                delete tempMap[requestID];
-                hasMore = false;
-            }
-        } else {
-            let appsFound = 0;
-            while (appsFound < requestSize
-                && Object.keys(tempMap[requestID].updates).length > 0) {
-                // find the next requestSize (e.g. 150) # of unsent games to return to client
-                for (const [index, [, appid]] of tempMap[requestID].gameUpdatesIDs.entries()) {
-                    if (tempMap[requestID].updates[appid] != null
-                        && updatesChunk[appid] == null) {
-                        updatesChunk[appid] = tempMap[requestID].updates[appid];
-                        delete tempMap[requestID].updates[appid];
-                        appsFound++;
-                        break;
-                    }
-                    // If the entire updates array didn't have any remaining games in it,
-                    // then those remaining games have no updates to report, so we're done.
-                    if (index === tempMap[requestID].gameUpdatesIDs.length - 1) {
-                        appsFound = Infinity;
-                    }
-                }
-            }
 
-            if (Object.keys(tempMap[requestID].updates).length === 0
-                || appsFound === Infinity) {
-                delete tempMap[requestID];
-                hasMore = false;
+    try {
+        let newCursor = cursor;
+        let toSend = 0;
+
+        while (
+            toSend < requestSize &&
+            (retrievalAmount == null || entry.retrievalAmount > 0) &&
+            newCursor < gameUpdatesIDs.length
+        ) {
+            const [, appid] = gameUpdatesIDs[newCursor++];
+            if (updates[appid] != null && updatesChunk[appid] == null) {
+                updatesChunk[appid] = updates[appid];
+                if (retrievalAmount != null) entry.retrievalAmount--;
+                delete updates[appid];
+                toSend++;
             }
         }
-        res.send({ updates: updatesChunk, hasMore })
-    } catch {
-        res.sendStatus(404);
+
+        entry.cursor = newCursor;
+
+        if (
+            (retrievalAmount != null && entry.retrievalAmount <= 0) ||
+            Object.keys(updates).length === 0 ||
+            newCursor >= gameUpdatesIDs.length
+        ) {
+            delete tempMap[requestID];
+            hasMore = false;
+        }
+
+        res.send({ updates: updatesChunk, hasMore });
+    } catch (err) {
+        console.error(err);
+        res.sendStatus(500);
     }
 });
 

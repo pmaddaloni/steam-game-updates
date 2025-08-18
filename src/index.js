@@ -1,9 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { HashRouter, Route, Routes } from "react-router";
-import App from './client/App';
+import App from './client/App.js';
 import './index.css';
-import reportWebVitals from './reportWebVitals';
+import reportWebVitals from './reportWebVitals.js';
 
 import {
   setUseWhatChange,

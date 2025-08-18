@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../../utilities/utils.js';
+import { getClientInfo, SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../../utilities/utils.js';
 
 // Using self is valid within a web worker.
 // eslint-disable-next-line no-restricted-globals
@@ -10,6 +10,7 @@ axios.defaults.baseURL = self.location.host.includes('steamgameupdates.info') ?
     (process.env.REACT_APP_LOCALHOST_PORT || ':8080');
 // https://create-react-app.dev/docs/adding-custom-environment-variables/#adding-development-environment-variables-in-env
 axios.defaults.withCredentials = true;
+const CLIENT_INFO = `${SUBSCRIPTION_BROWSER_ID_SUFFIX}: ${getClientInfo().browser}`;
 
 onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize, id, filters } }) => {
     let ownedGamesWithoutUpdates = { ...ownedGames };
@@ -32,7 +33,7 @@ onmessage = async ({ data: { ownedGames, totalNumberOfRequests, requestSize, id,
         // Need to fetch all of them up front, not incrementally
         // because you don't know where the most recently updated game is in the list...
         let result = await axios.post('/api/beta/game-updates-for-owned-games', {
-            appids, request_id: requestID, id: id + SUBSCRIPTION_BROWSER_ID_SUFFIX, filters
+            appids, request_id: requestID, id: id + CLIENT_INFO, filters
         });
         const { gameUpdatesIDs } = result.data;
         postMessage({ gameUpdatesIDs });

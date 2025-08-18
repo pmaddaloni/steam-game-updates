@@ -2,7 +2,7 @@ import axios from 'axios';
 import { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
 import removeAccents from 'remove-accents';
 
-import { createWebSocketConnector, notifyUser, SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../utilities/utils.js';
+import { createWebSocketConnector, getClientInfo, notifyUser, SUBSCRIPTION_BROWSER_ID_SUFFIX } from '../utilities/utils.js';
 import backupLogo from './body/steam-logo.svg';
 
 const WEB_SOCKET_PATH = window.location.host.includes('steamgameupdates.info') ?
@@ -13,6 +13,7 @@ export const useAuth = () => useContext(AuthContext);
 
 // Break up a person's library request into chunks so as not to overwhelm the API.
 const REQUEST_SIZE = 250;
+const CLIENT_INFO = `${SUBSCRIPTION_BROWSER_ID_SUFFIX}: ${getClientInfo().browser}`;
 
 export const FILTER_MAPPING = (() => {
     const mapping = {
@@ -64,7 +65,7 @@ const reducer = (state, { type, value }) => {
             localStorage.removeItem('steam-game-updates-user');
             localStorage.removeItem('steam-game-updates-filters');
             localStorage.removeItem('steam-game-updates-notifications-allowed')
-            axios.post('/api/logout', { id: state.id, appids: Object.keys(state.ownedGames ?? []) })
+            axios.post('/api/logout', { id: state.id + CLIENT_INFO, appids: Object.keys(state.ownedGames ?? []) })
             return defaultState;
         case 'refreshGames':
             return {
@@ -115,11 +116,11 @@ const reducer = (state, { type, value }) => {
                 filters = [];
             }
             localStorage.setItem('steam-game-updates-filters', JSON.stringify(filters));
-            axios.post('/api/notifications/filters', { id: state.id, filters });
+            axios.post('/api/notifications/filters', { id: state.id + CLIENT_INFO, filters });
             return { ...state, filters }
         case 'setFilters':
             if (state.id) {
-                axios.post('/api/notifications/filters', { id: state.id, filters: value });
+                axios.post('/api/notifications/filters', { id: state.id + CLIENT_INFO, filters: value });
             }
             const filterSet = new Set();
             value.forEach(f => {
@@ -228,7 +229,7 @@ export const AuthProvider = function ({ children }) {
                 }
             }
             if (steamGameUpdatesSocket == null) {
-                steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH + `?id=${state.id}${SUBSCRIPTION_BROWSER_ID_SUFFIX}`, { onMessage });
+                steamGameUpdatesSocket = createWebSocketConnector(WEB_SOCKET_PATH + `?id=${state.id}${CLIENT_INFO}`, { onMessage });
                 steamGameUpdatesSocket.start();
             } else {
                 steamGameUpdatesSocket.updateOnMessage(onMessage);

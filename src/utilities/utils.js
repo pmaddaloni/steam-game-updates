@@ -3,22 +3,39 @@ import axios from 'axios';
 export const SUBSCRIPTION_BROWSER_ID_SUFFIX = ' - browser';
 export const SUBSCRIPTION_IOS_ID_SUFFIX = ' - ios';
 
-export function getPlatform() {
-    // Prefer modern API if available
+export function getClientInfo() {
+    const ua = navigator.userAgent.toLowerCase();
+    const info = {
+        platform: "unknown",
+        browser: "unknown",
+        isMobile: false,
+    };
+
+    // --- Platform detection ---
     if (navigator.userAgentData && navigator.userAgentData.platform) {
-        return navigator.userAgentData.platform;
+        info.platform = navigator.userAgentData.platform.toLowerCase();
+        info.isMobile = navigator.userAgentData.mobile || false;
+    } else {
+        if (/windows/.test(ua)) info.platform = "windows";
+        else if (/mac/.test(ua)) info.platform = "mac";
+        else if (/linux/.test(ua)) info.platform = "linux";
+        else if (/iphone|ipad|ipod/.test(ua)) {
+            info.platform = "ios";
+            info.isMobile = true;
+        } else if (/android/.test(ua)) {
+            info.platform = "android";
+            info.isMobile = true;
+        }
     }
 
-    // Fallback: parse userAgent string
-    const ua = navigator.userAgent;
+    // --- Browser detection ---
+    if (/edg/.test(ua)) info.browser = "edge";
+    else if (/chrome|crios/.test(ua)) info.browser = "chrome";
+    else if (/safari/.test(ua) && !/chrome|crios/.test(ua)) info.browser = "safari";
+    else if (/firefox|fxios/.test(ua)) info.browser = "firefox";
+    else if (/msie|trident/.test(ua)) info.browser = "internet explorer";
 
-    if (/windows/i.test(ua)) return "Windows";
-    if (/mac/i.test(ua)) return "Mac";
-    if (/linux/i.test(ua)) return "Linux";
-    if (/iphone|ipad|ipod/i.test(ua)) return "iOS";
-    if (/android/i.test(ua)) return "Android";
-
-    return "Unknown";
+    return info;
 }
 
 /**

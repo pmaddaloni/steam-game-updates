@@ -331,7 +331,7 @@ function initializeSteamWebPipes() {
     console.log('Setting up SteamWebPipes server...');
     ws = createWebSocketConnector('ws://localhost:8181', {
         ServerWebSocket: WebSocket,
-        showConsoleMsgs: true || environment === 'development',
+        showConsoleMsgs: true,
         onMessage: (message) => {
             const { Apps: apps } = JSON.parse(message.data);
             if (apps == null) {
@@ -700,12 +700,12 @@ const getGameUpdates = async (externalAppid) => {
                     [String(appid)]: JSON.stringify(mostRecentEvents),
                 });
 
-                if (true || (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime)) {
+                if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
                     const name = app.locals.allSteamGameNames[appid];
                     const eventType = mostRecentEvents[0]?.event_type;
                     const eventTitle = mostRecentEvents[0]?.headline || 'New Update';
-                    console.log(`Game ${name} (${appid}) has new updates (${eventType}):`, mostRecentEvents.length, 'events, most recent at', new Date(mostRecentEventTime * 1000).toLocaleString());
-                    console.log(app.locals.subscribedUserFilters, '\n', app.locals.gamesWithSubscriptions[appid], '\n')
+                    // console.log(`Game ${name} (${appid}) has new updates (${eventType}):`, mostRecentEvents.length, 'events, most recent at', new Date(mostRecentEventTime * 1000).toLocaleString());
+                    // console.log(app.locals.subscribedUserFilters, '\n', app.locals.gamesWithSubscriptions[appid], '\n')
                     // Notify mobile users of the new updates.
                     sendIndividualNotifications({ appid, name, eventTitle, eventType });
 

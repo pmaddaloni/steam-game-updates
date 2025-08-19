@@ -54,6 +54,7 @@ const defaultState = {
     loadingProgress: null,
     filters: [],
     menuFilters: [],
+    totalGameUpdates: null,
     notificationsAllowed: false,
 };
 
@@ -98,6 +99,8 @@ const reducer = (state, { type, value }) => {
             return { ...state, filteredList }
         case 'updateLoadingProgress':
             return { ...state, loadingProgress: value };
+        case 'setTotalGameUpdates':
+            return { ...state, totalGameUpdates: value };
         case 'setRetrievalAmount':
             localStorage.setItem('steam-game-updates-retrievalAmount', JSON.stringify(value));
             return { ...state, retrievalAmount: value }
@@ -203,11 +206,14 @@ export const AuthProvider = function ({ children }) {
             gameDetailsWorker = new Worker(new URL("./workers/gameDetailsWorker.js", import.meta.url));
             // Set up event listeners for messages from the worker
             gameDetailsWorker.onmessage = function (event) {
-                const { loadingProgress, ownedGamesWithUpdates, gameUpdatesIDs } = event.data;
+                const { loadingProgress, ownedGamesWithUpdates, gameUpdatesIDs, totalUpdates } = event.data;
                 if (loadingProgress != null) {
                     dispatch({ type: 'updateLoadingProgress', value: loadingProgress });
                 } else if (gameUpdatesIDs != null) {
                     dispatch({ type: 'updateGameUpdates', value: gameUpdatesIDs });
+                    if (totalUpdates != null) {
+                        dispatch({ type: 'setTotalGameUpdates', value: totalUpdates });
+                    }
                 } else {
                     dispatch({ type: 'updateOwnedGames', value: ownedGamesWithUpdates });
                 }

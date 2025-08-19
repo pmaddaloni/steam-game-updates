@@ -137,7 +137,8 @@ export default function Header() {
         menuFilters,
         loadingProgress,
         retrievalAmount,
-        gameUpdates
+        gameUpdates,
+        totalGameUpdates
     } = useAuth();
     const [interactionDisabled, setInteractionDisabled] = useState(true);
     const [fetchAllUpdates, setFetchAllUpdates] = useState(retrievalAmount == null);
@@ -276,17 +277,17 @@ export default function Header() {
 
     const onNumberChange = ({ target: { value: num } }) => {
         let newNumber = parseInt(num);
-        if (isNaN(newNumber)) {
+        if (isNaN(newNumber) && num !== '') {
             window.alert("Please ensure you only input numbers.");
             return;
         } else if (num === 0) {
             window.alert("Please enter a number larger than zero.");
             return;
-        } else if (parseInt(num) > gameUpdates.length) {
+        } else if (num > totalGameUpdates) {
             window.alert(`Please enter a number smaller than ${gameUpdates.length} (this is your current total number of updates available).`);
             return;
         }
-        setFetchUpdatesAmount(newNumber);
+        setFetchUpdatesAmount(num && newNumber);
     }
     const toggleSwitch = () => {
         const newNumber = fetchAllUpdates ? Math.min(500, gameUpdates?.length).toString() : '';

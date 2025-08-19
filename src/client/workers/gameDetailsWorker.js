@@ -42,8 +42,8 @@ onmessage = async ({ data: {
         let result = await axios.post('/api/beta/game-updates-for-owned-games', {
             appids, request_id: requestID, id: id + CLIENT_INFO, filters, request_size: retrievalAmount
         });
-        const { gameUpdatesIDs } = result.data;
-        postMessage({ gameUpdatesIDs });
+        const { gameUpdatesIDs, totalUpdates } = result.data;
+        postMessage({ gameUpdatesIDs, totalUpdates });
         postMessage({ loadingProgress: (++numberOfRequestsSoFar / totalNumberOfRequests) * 100 });
         let ownedGamesWithUpdates = {};
         do {

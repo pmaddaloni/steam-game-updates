@@ -1028,7 +1028,7 @@ const tempMap = {};
 app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const appids = (req.body.appids ?? []).map(Number);
     const requestID = req.body.request_id;
-    const requestSize = parseInt(req.body.request_size ?? 0, 10);
+    const requestSize = parseInt(req.body.request_size ?? 0);
 
     if (!requestID) {
         res.sendStatus(406);
@@ -1036,28 +1036,33 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
     }
     notificationSubscribe(req);
 
-    // Parallelized Redis fetches
-    const gameUpdates = await Promise.all(
-        appids.map(async (appid) => {
-            const events = await getSingleRedisValue(appid);
-            if (
-                events == null ||
-                app.locals.allSteamGamesUpdatesPossiblyChanged[appid] > (events[0]?.posttime ?? 0)
-            ) {
-                app.locals.appidsToCheckPriorityQueue.enqueue(appid, events?.[0]?.posttime);
-            }
-            return [appid, events];
-        })
-    );
+    const raw = await redisClient.hmGet("allSteamGamesUpdates", appids.map(String));
 
-    const updates = Object.fromEntries(gameUpdates.filter(([, events]) => events != null));
-    const totalUpdates = gameUpdates.reduce(
-        (sum, [, events]) => sum + (events ? events.length : 0),
-        0
-    );
+    const gameUpdates = [];
+    const updates = {};
+    let totalUpdates = 0;
+    for (let i = 0; i < appids.length; i++) {
+        const appid = appids[i];
+        const value = raw[i];
+        const events = value ? JSON.parse(value) : null;
+
+        // Enqueue if missing or possibly stale
+        if (
+            events == null ||
+            app.locals.allSteamGamesUpdatesPossiblyChanged[appid] > (events?.[0]?.posttime ?? 0)
+        ) {
+            app.locals.appidsToCheckPriorityQueue.enqueue(appid, events?.[0]?.posttime);
+        }
+
+        gameUpdates.push([appid, events]);
+        if (events) {
+            updates[appid] = events;
+            totalUpdates += events.length;
+        }
+    }
 
     // Sort by posttime descending
-    const gameUpdatesIDs = await sortGameUpdates(gameUpdates, requestSize, totalUpdates)
+    const gameUpdatesIDs = await sortGameUpdates(gameUpdates, requestSize, totalUpdates);
     tempMap[requestID] = {
         updates,
         gameUpdatesIDs,
@@ -1065,8 +1070,8 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
         cursor: 0,
     };
 
-    // Clean up after 5 min
-    setTimeout(() => delete tempMap[requestID], 1000 * 60 * 5);
+    // Clean up after 2 min
+    setTimeout(() => delete tempMap[requestID], 1000 * 60 * 2);
     res.send({ gameUpdatesIDs, totalUpdates });
 });
 
@@ -1120,28 +1125,6 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
         res.sendStatus(500);
     }
 });
-
-// app.post('/api/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
-//     const appids = (req.body.appids ?? []).map(appid => parseInt(appid, 10));
-//     const updates = []; // An array of {appid: appid, events: []} in order of most recently updated
-//     // Iterate through all passed in games and add them if found
-//     for (const appid of appids) {
-//         // (The appid is the second element in the array)
-//         // const events = app.locals.allSteamGamesUpdates[appid];
-//         const events = await getSingleRedisValue(appid);
-//         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[appid] > (events[0]?.posttime ?? 0)) {
-//             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
-//             app.locals.appidsToCheckPriorityQueue.enqueue(appid, events?.[0]?.posttime);
-//         }
-//         updates.push(
-//             {
-//                 appid: appid,
-//                 events,
-//             }
-//         );
-//     }
-//     res.send({ updates });
-// });
 
 app.get('/api/game-details', ensureAuthenticated, async (req, res) => {
     if (req.app.locals.waitBeforeRetrying === false && req.app.locals.dailyLimit > 0) {

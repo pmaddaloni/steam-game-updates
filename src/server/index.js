@@ -133,7 +133,7 @@ passport.use(new SteamStrategy({
     });
 }));
 
-const DAILY_LIMIT = 200000;
+const DAILY_LIMIT = 250000;
 const RETRY_WAIT_TIME = 5 * 60 * 1000;      // Time in minutes
 const REQUEST_WAIT_TIME = 500;              // 864 would keep within 100k a day, but it appears there is no limit on updates
 const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per REQUEST_WAIT_TIME
@@ -562,7 +562,6 @@ console.log(`Server last refreshed on ${new Date(app.locals.lastServerRefreshTim
 
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
-// Initial Daily Limit Interval must respect previous start time, so start with Timeout
 function getNextMidnight() {
     const now = new Date();
 
@@ -578,15 +577,17 @@ function getNextMidnight() {
     // Calculate the delay in milliseconds until tomorrow at midnight.
     return delay;
 }
-setTimeout(() => {
-    app.locals.dailyLimit = DAILY_LIMIT;
-    app.locals.lastServerRefreshTime = new Date().getTime();
-
+function scheduleDailyReset() {
     setTimeout(() => {
         app.locals.dailyLimit = DAILY_LIMIT;
-        app.locals.lastServerRefreshTime = new Date().getTime();
+        app.locals.lastServerRefreshTime = Date.now();
+        console.log("Daily reset at midnight");
+
+        // re-schedule for the next midnight
+        scheduleDailyReset();
     }, getNextMidnight());
-}, getNextMidnight());
+}
+scheduleDailyReset();
 
 // Log out all users every 2 days.
 // Maybe make this longer in the future.
@@ -699,12 +700,12 @@ const getGameUpdates = async (externalAppid) => {
                     [String(appid)]: JSON.stringify(mostRecentEvents),
                 });
 
-                if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
+                if (true || (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime)) {
                     const name = app.locals.allSteamGameNames[appid];
                     const eventType = mostRecentEvents[0]?.event_type;
                     const eventTitle = mostRecentEvents[0]?.headline || 'New Update';
                     console.log(`Game ${name} (${appid}) has new updates (${eventType}):`, mostRecentEvents.length, 'events, most recent at', new Date(mostRecentEventTime * 1000).toLocaleString());
-                    // console.log(app.locals.subscribedUserFilters, '\n', app.locals.gamesWithSubscriptions[appid], '\n')
+                    console.log(app.locals.subscribedUserFilters, '\n', app.locals.gamesWithSubscriptions[appid], '\n')
                     // Notify mobile users of the new updates.
                     sendIndividualNotifications({ appid, name, eventTitle, eventType });
 

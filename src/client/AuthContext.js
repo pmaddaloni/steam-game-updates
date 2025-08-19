@@ -253,15 +253,14 @@ export const AuthProvider = function ({ children }) {
     const getAllUserOwnedGames = useCallback(async (userID = state.id) => {
         const result = await axios.get('api/owned-games', { params: { id: userID } });
         if (result != null) {
-            const ownedGames = result?.data?.games?.reduce((acc, game) => {
-                return {
-                    ...acc, [game.appid]: {
-                        name: game.name,
-                        img_icon_url: game.img_icon_url,
-                        img_logo_url: game.img_logo_url,    // this appears to be missing as of a year ago... https://bit.ly/3SYvabT
-                    }
-                }
-            }, {});
+            const ownedGames = {};
+            for (const game of result?.data?.games ?? []) {
+                ownedGames[game.appid] = {
+                    name: game.name,
+                    img_icon_url: game.img_icon_url,
+                    img_logo_url: game.img_logo_url, // note: may be missing
+                };
+            }
             return ownedGames;
         } /* else {
             const ownedGames = localStorage.getItem('steam-game-updates-ownedGames');

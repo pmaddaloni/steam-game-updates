@@ -87,6 +87,20 @@ const dividerStyle = {
     width: '100%',
 };
 
+const searchStyle = {
+    height: 15,
+    width: 50,
+    borderWidth: 1,
+    backgroundColor: 'white',
+    color: 'black',
+    fontSize: 11,
+    border: '1px solid #ccc',
+    borderRadius: '4px',
+    outline: 'none',
+    appearance: 'textfield',
+    textAlign: 'center',
+};
+
 const listItemProps = {
     onMouseOver: e => {
         e.target.style.color = '#5fb4f0';
@@ -114,8 +128,20 @@ const reducer = (state, filterToUpdate) => {
 }
 
 export default function Header() {
-    const { notificationsAllowed, id: userID, displayName, photos, dispatch, menuFilters, loadingProgress } = useAuth();
+    const {
+        notificationsAllowed,
+        id: userID,
+        displayName,
+        photos,
+        dispatch,
+        menuFilters,
+        loadingProgress,
+        retrievalAmount,
+        gameUpdates
+    } = useAuth();
     const [interactionDisabled, setInteractionDisabled] = useState(true);
+    const [fetchAllUpdates, setFetchAllUpdates] = useState(retrievalAmount == null);
+    const [fetchUpdatesAmount, setFetchUpdatesAmount] = useState((retrievalAmount ?? '').toString());
     const [searchValue, setSearchValue] = useState('');
     const [allowNotifications, setAllowNotifications] = useState(notificationsAllowed);
     const [isPopoverOpen, setIsOpen] = useState(false);
@@ -143,19 +169,33 @@ export default function Header() {
     }, [notificationsAllowed]);
 
     useEffect(() => {
+        if (retrievalAmount != null) {
+            setFetchUpdatesAmount(retrievalAmount);
+            setFetchAllUpdates(false);
+        } else {
+            setFetchAllUpdates(true);
+        }
+    }, [retrievalAmount]);
+
+    useEffect(() => {
         function handleKeyDown(event) {
             if (interactionDisabled) {
                 return;
             }
             const searchBar = document.getElementById('search-bar');
-            if (event.key === 'r' && document.activeElement !== searchBar) {
+            const retrievalNumInput = document.getElementById('retrieval-amount-input');
+            if (document.activeElement === searchBar ||
+                document.activeElement === retrievalNumInput) {
+                return;
+            }
+            if (event.key === 'r') {
                 const refreshButton = document.getElementById('refresh-button');
                 if (refreshButton) {
                     refreshButton.classList.add(styles['pseudo-active']);
                     setTimeout(() => refreshButton.classList.remove(styles['pseudo-active']), 200);
                 }
                 dispatch({ type: 'refreshGames' })
-            } else if (event.key === 's' && document.activeElement !== searchBar) {
+            } else if (event.key === 's') {
                 event.preventDefault();
                 searchBar?.focus()
             }
@@ -225,6 +265,36 @@ export default function Header() {
                 setIsOpen(false);
             }, 200)
         }
+    }
+
+    const onBlur = () => {
+        setFetchAllUpdates(!fetchUpdatesAmount);
+        dispatch({
+            type: 'setRetrievalAmount', value: Number(fetchUpdatesAmount || 0)
+        });
+    }
+
+    const onNumberChange = ({ target: { value: num } }) => {
+        let newNumber = parseInt(num);
+        if (isNaN(newNumber)) {
+            window.alert("Please ensure you only input numbers.");
+            return;
+        } else if (num === 0) {
+            window.alert("Please enter a number larger than zero.");
+            return;
+        } else if (parseInt(num) > gameUpdates.length) {
+            window.alert(`Please enter a number smaller than ${gameUpdates.length} (this is your current total number of updates available).`);
+            return;
+        }
+        setFetchUpdatesAmount(newNumber);
+    }
+    const toggleSwitch = () => {
+        const newNumber = fetchAllUpdates ? Math.min(500, gameUpdates?.length).toString() : '';
+        setFetchUpdatesAmount(newNumber);
+        setFetchAllUpdates(previousState => !previousState);
+        dispatch({
+            type: 'setRetrievalAmount', value: fetchAllUpdates ? newNumber : null
+        });
     }
 
     const filterLabels = [
@@ -318,6 +388,37 @@ export default function Header() {
                                         {...listItemSwitchProps}
                                     />
                                 </li>
+                                <li
+                                    style={listItemStyle}
+                                    onClick={toggleSwitch}
+                                >
+                                    Retrieve all updates
+                                    <Switch
+                                        checked={fetchAllUpdates}
+                                        {...listItemSwitchProps}
+                                    />
+                                </li>
+                                <li style={listItemStyle}>
+                                    <div># of updates to get</div>
+                                    <input
+                                        id="retrieval-amount-input"
+                                        autoComplete="off"
+                                        autoCapitalize="off"
+                                        style={searchStyle}
+                                        type="number"
+                                        name="retrieval-amount"
+                                        maxLength="6"
+                                        value={fetchUpdatesAmount}
+                                        onChange={onNumberChange}
+                                        onBlur={onBlur}
+                                        onKeyUp={({ code, target }) => {
+                                            if (code === 'Enter') {
+                                                target.blur();
+                                                onBlur();
+                                            }
+                                        }}
+                                    />
+                                </li>
                                 <li style={{ ...dividerStyle }} />
                                 <li style={{
                                     fontSize: '12px',
@@ -343,7 +444,9 @@ export default function Header() {
                                     </div>
                                 </li>
                                 {filterLabels.map(([title, key]) => (
-                                    <li style={listItemStyle}
+                                    <li
+                                        key={key}
+                                        style={listItemStyle}
                                         onClick={() => {
                                             const newFilter = !filters[key];
                                             if (Object.values(filters).filter(Boolean).length === 1 && newFilter === false) {

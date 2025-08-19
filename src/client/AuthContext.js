@@ -64,7 +64,8 @@ const reducer = (state, { type, value }) => {
         case 'logout':
             localStorage.removeItem('steam-game-updates-user');
             localStorage.removeItem('steam-game-updates-filters');
-            localStorage.removeItem('steam-game-updates-notifications-allowed')
+            localStorage.removeItem('steam-game-updates-notifications-allowed');
+            localStorage.removeItem('steam-game-updates-retrievalAmount');
             axios.post('/api/logout', { id: state.id + CLIENT_INFO, appids: Object.keys(state.ownedGames ?? []) })
             return defaultState;
         case 'refreshGames':
@@ -97,6 +98,9 @@ const reducer = (state, { type, value }) => {
             return { ...state, filteredList }
         case 'updateLoadingProgress':
             return { ...state, loadingProgress: value };
+        case 'setRetrievalAmount':
+            localStorage.setItem('steam-game-updates-retrievalAmount', JSON.stringify(value));
+            return { ...state, retrievalAmount: value }
         case 'updateFilters':
             // filter out all of these event types
             let filters;
@@ -153,12 +157,15 @@ export const AuthProvider = function ({ children }) {
                 user = JSON.parse(user);
                 let storedGameUpdatesFilters = await localStorage.getItem('steam-game-updates-filters');
                 if (storedGameUpdatesFilters != null) {
-                    parsedGameUpdatesFilters = JSON.parse(storedGameUpdatesFilters);
+                    dispatch({ type: 'setFilters', value: JSON.parse(storedGameUpdatesFilters) });
                 }
                 let storedNotificationsAllowed = await localStorage.getItem('steam-game-updates-notifications-allowed');
                 if (storedNotificationsAllowed != null) {
-                    const parsedNotificationsAllowed = JSON.parse(storedNotificationsAllowed);
-                    dispatch({ type: 'setNotificationsAllowed', value: parsedNotificationsAllowed });
+                    dispatch({ type: 'setNotificationsAllowed', value: JSON.parse(storedNotificationsAllowed) });
+                }
+                let storedRetrievalAmount = await localStorage.getItem('steam-game-updates-retrievalAmount');
+                if (storedRetrievalAmount != null) {
+                    dispatch({ type: 'setRetrievalAmount', value: JSON.parse(storedRetrievalAmount) });
                 }
             } else {
                 dispatch({ type: 'logout' })
@@ -269,9 +276,14 @@ export const AuthProvider = function ({ children }) {
                     if (ownedGames) {
                         const totalNumberOfRequests = Math.ceil(Object.keys(ownedGames).length / REQUEST_SIZE) + 2;
                         dispatch({ type: 'updateLoadingProgress', value: (1 / totalNumberOfRequests) * 100 });
-                        gameDetailsWorker.postMessage(
-                            { ownedGames, totalNumberOfRequests, requestSize: REQUEST_SIZE, id: state.id, filters: state.filters }
-                        );
+                        gameDetailsWorker.postMessage({
+                            ownedGames,
+                            totalNumberOfRequests,
+                            requestSize: REQUEST_SIZE,
+                            id: state.id,
+                            filters: state.filters,
+                            retrievalAmount: state.retrievalAmount
+                        });
                     } else {
                         dispatch({ type: 'updateLoadingProgress', value: 100 });
                         dispatch({ type: 'updateOwnedGames', value: {} });

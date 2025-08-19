@@ -10,13 +10,24 @@ import logo from './steam-logo.svg';
 
 export default function Body() {
     const itemsPerPage = 25;
-    const { id, gameUpdates, ownedGames, filteredList, filters, loadingProgress } = useAuth();
+    const {
+        id,
+        gameUpdates: externalGameUpdates,
+        ownedGames,
+        filteredList,
+        filters,
+        loadingProgress,
+        retrievalAmount
+    } = useAuth();
     const [selectedGame, setSelectedGame] = useState(null);
     const [gameComponents, setGameComponents] = useState([]);
     const currentListIndexRef = useRef(0);
     const currentGameComponentsRef = useRef([]);
     const gameUpdatesRef = useRef(null);
     const timeoutId = useRef(null);
+    const retrievalAmountRef = useRef(retrievalAmount);
+    const gameUpdates = retrievalAmountRef.current ?
+        externalGameUpdates.slice(0, retrievalAmountRef.current) : externalGameUpdates;
 
     const createGameComponents = useCallback((gamesList, showMore = false) => {
         let componentIndex = showMore ? currentGameComponentsRef.current.length : 0;
@@ -54,8 +65,18 @@ export default function Body() {
         currentListIndexRef.current = currentIndex;
         const result = showMore ? currentGameComponentsRef.current.concat(newList) : newList;
         currentGameComponentsRef.current = result;
+        retrievalAmountRef.current = retrievalAmount;
         return result;
-    }, [filters, ownedGames]);
+    }, [filters, ownedGames, retrievalAmount]);
+
+    useEffect(() => {
+        if (loadingProgress == null) {
+            gameUpdatesRef.current = gameUpdates;
+        } else if (loadingProgress === 0) {
+            retrievalAmountRef.current = retrievalAmount;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loadingProgress])
 
     // Set appropriate styles for Windows specifically
     useEffect(() => {
@@ -101,7 +122,7 @@ export default function Body() {
             let low = 0, high = arr.length;
             while (low < high) {
                 const mid = (low + high) >> 1;
-                if (arr[mid].update.posttime <= posttime) {
+                if (arr[mid].props.update.posttime <= posttime) {
                     high = mid;
                 } else {
                     low = mid + 1;
@@ -112,10 +133,18 @@ export default function Body() {
 
         let currentIndex = currentListIndexRef.current;
         let newList = [...currentGameComponentsRef.current];
+        // Build a Set of existing items for O(1) duplicate check
+        const existingKeys = new Set(
+            newList.map(item => item.key)
+        );
+
 
         for (const [posttime, appid] of newUpdates) {
             const { name, update, updateIndex } = getUpdate(appid, posttime);
-            if (!update || filters.includes(update.event_type)) continue;
+            const key = `${appid}-${posttime}`;
+            if (!update || filters.includes(update.event_type) || existingKeys.has(key)) {
+                continue;
+            }
 
             const insertIndex = binarySearchInsertIndex(newList, posttime);
             newList.splice(insertIndex, 0,
@@ -144,30 +173,18 @@ export default function Body() {
 
     useEffect(() => {
         if (loadingProgress === 100 &&
-            currentGameComponentsRef.length &&
-            gameUpdatesRef.current != null /* &&
-            gameUpdates.length !== gameUpdatesRef.current.length */
+            currentGameComponentsRef.current.length &&
+            gameUpdatesRef.current != null
         ) {
-            const oldGameUpdates = [...gameUpdatesRef.current];
-            const oldSet = new Set(oldGameUpdates.map(([ms, id]) => `${ms}:${id}`));
+            const oldSet = new Set(gameUpdatesRef.current.map(([ms, id]) => `${ms}:${id}`));
             const newlyAddedUpdates = gameUpdates.filter(([ms, id]) =>
                 !oldSet.has(`${ms}:${id}`)
             );
             insertIntoExistingDataList(newlyAddedUpdates);
             gameUpdatesRef.current = null;
-        } else if (loadingProgress !== 100) {
-            gameUpdatesRef.current = gameUpdates
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadingProgress]);
-
-    // useEffect(() => {
-    //     // handle the case where a user refreshes their updates.
-    //     if (gameUpdates.length === 0) {
-    //         setSelectedGame(null);
-    //         setGameComponents([]);
-    //     }
-    // }, [gameUpdates]);
 
     useEffect(() => {
         const previousSelectedGame = document.getElementsByClassName(styles.selected)[0];

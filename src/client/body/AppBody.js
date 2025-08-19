@@ -65,9 +65,8 @@ export default function Body() {
         currentListIndexRef.current = currentIndex;
         const result = showMore ? currentGameComponentsRef.current.concat(newList) : newList;
         currentGameComponentsRef.current = result;
-        retrievalAmountRef.current = retrievalAmount;
         return result;
-    }, [filters, ownedGames, retrievalAmount]);
+    }, [filters, ownedGames]);
 
     useEffect(() => {
         if (loadingProgress == null) {
@@ -76,40 +75,7 @@ export default function Body() {
             retrievalAmountRef.current = retrievalAmount;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadingProgress])
-
-    // Set appropriate styles for Windows specifically
-    useEffect(() => {
-        if (gameComponents.length !== 0) {
-            const isWindows = getClientInfo().platform === 'windows';
-            const gameList = document.getElementById('game-list');
-
-            if (isWindows && gameList) {
-                gameList.classList.add(styles['os-windows']);
-            }
-            const gameContainer = document.getElementById('update-container');
-            if (isWindows && gameList) {
-                gameContainer.classList.add(styles['os-windows']);
-            }
-        }
-    }, [gameComponents.length]);
-
-    useEffect(() => {
-        if (loadingProgress != null) {
-            setSelectedGame(null);
-        }
-        const newComponents = createGameComponents(filteredList ?? gameUpdates);
-        setGameComponents(newComponents);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filters, filteredList]);
-
-    useEffect(() => {
-        if (gameComponents.length === 0) {
-            const gameComponents = createGameComponents(gameUpdates);
-            setGameComponents(gameComponents);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [ownedGames]);
+    }, [loadingProgress]);
 
     const insertIntoExistingDataList = (newUpdates) => {
         const getUpdate = (appid, posttime) => {
@@ -147,28 +113,28 @@ export default function Body() {
             }
 
             const insertIndex = binarySearchInsertIndex(newList, posttime);
-            newList.splice(insertIndex, 0,
-                <GameUpdateListComponent
-                    key={appid + '-' + update.posttime}
-                    appid={appid}
-                    name={name}
-                    update={update}
-                    newlyAdded={true}
-                    setSelectedGame={setSelectedGame}
-                    index={insertIndex}
-                    eventIndex={updateIndex}
-                />
-            );
-            currentIndex++;
+            if (insertIndex < currentListIndexRef.current) {
+                newList.splice(insertIndex, 0,
+                    <GameUpdateListComponent
+                        key={appid + '-' + update.posttime}
+                        appid={appid}
+                        name={name}
+                        update={update}
+                        newlyAdded={true}
+                        setSelectedGame={setSelectedGame}
+                        index={insertIndex}
+                        eventIndex={updateIndex}
+                    />
+                );
+                currentIndex++;
+            }
         }
 
         newList = newList.map((component, idx) =>
             cloneElement(component, { index: idx })
         );
-
         currentListIndexRef.current = currentIndex;
         currentGameComponentsRef.current = newList;
-        setGameComponents(newList);
     };
 
     useEffect(() => {
@@ -185,6 +151,41 @@ export default function Body() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadingProgress]);
+
+    // Set appropriate styles for Windows specifically
+    useEffect(() => {
+        if (gameComponents.length !== 0) {
+            const isWindows = getClientInfo().platform === 'windows';
+            const gameList = document.getElementById('game-list');
+
+            if (isWindows && gameList) {
+                gameList.classList.add(styles['os-windows']);
+            }
+            const gameContainer = document.getElementById('update-container');
+            if (isWindows && gameList) {
+                gameContainer.classList.add(styles['os-windows']);
+            }
+        }
+    }, [gameComponents.length]);
+
+    useEffect(() => {
+        if (loadingProgress != null) {
+            setSelectedGame(null);
+        }
+        const newComponents = createGameComponents(filteredList ?? gameUpdates);
+        setGameComponents(newComponents);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters, filteredList]);
+
+    useEffect(() => {
+        if (gameComponents.length === 0) {
+            const gameComponents = createGameComponents(gameUpdates);
+            setGameComponents(gameComponents);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ownedGames]);
+
+
 
     useEffect(() => {
         const previousSelectedGame = document.getElementsByClassName(styles.selected)[0];

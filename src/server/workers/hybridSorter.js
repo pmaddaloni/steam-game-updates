@@ -33,21 +33,26 @@ function topKUpdates(results, k) {
     return arr.reverse(); // Make it descending order (newest -> oldest)
 }
 
-export async function sortGameUpdates(gameUpdatesIDs, requestSize, totalUpdates) {
+export async function sortGameUpdates(gameUpdates, requestSize, totalUpdates) {
     // Heap if requestSize << total updates
     if (requestSize && requestSize < totalUpdates / 4) {
-        return topKUpdates(gameUpdatesIDs, requestSize);
+        return topKUpdates(gameUpdates, requestSize);
     } else {
-        let result = gameUpdatesIDs.flatMap(([appid, events]) =>
-            events ? events.map(({ posttime }) => [posttime, appid]) : []
-        );
+        let result = [];
+        for (const [appid, events] of gameUpdates) {
+            if (events) {
+                for (const { posttime } of events) {
+                    result.push([posttime, appid]);
+                }
+            }
+        }
         // Otherwise Just sort everything
-        if (gameUpdatesIDs.length < SORT_THRESHOLD) {
+        if (result.length < SORT_THRESHOLD) {
             // Inline sort (fast, no worker overhead)
-            result = gameUpdatesIDs.sort((a, b) => b[0] - a[0]);
+            result = result.sort((a, b) => b[0] - a[0]);
         } else {
-            console.log(`Send to worker pool (offload ${gameUpdatesIDs.length} keys to sort)`);
-            result = pool.exec('sortUpdates', [gameUpdatesIDs]);
+            console.log(`Send to worker pool (offload ${result.length} keys to sort)`);
+            result = pool.exec('sortUpdates', [result]);
         }
         if (requestSize) {
             result = result.slice(0, requestSize);

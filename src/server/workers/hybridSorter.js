@@ -1,3 +1,4 @@
+import { MinPriorityQueue } from '@datastructures-js/priority-queue';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import workerpool from 'workerpool';
@@ -12,13 +13,46 @@ const pool = workerpool.pool(path.resolve(__dirname, 'sortWorker.js'), {
 
 const SORT_THRESHOLD = 50000;
 
-export async function sortGameUpdates(gameUpdatesIDs) {
-    if (gameUpdatesIDs.length < SORT_THRESHOLD) {
-        // Inline sort (fast, no worker overhead)
-        return gameUpdatesIDs.sort((a, b) => b[0] - a[0]);
+function topKUpdates(results, k) {
+    const pq = new MinPriorityQueue((item) => item[0]); // [posttime, appid]
+    // We want the top k largest posttimes (most recent).
+    // This minheap makes it easy to eject the smallest item whenever the heap grows past size k.
+    // In the end it holds exactly the k largest posttimes, but stored in ascending order (oldest -> newest).
+    for (const [appid, events] of results) {
+        if (!events) continue;
+        for (const { posttime } of events) {
+            pq.enqueue([posttime, appid]);
+            if (pq.size() > k) pq.dequeue();
+        }
+    }
+
+    const arr = [];
+    while (!pq.isEmpty()) {
+        arr.push(pq.dequeue());
+    }
+    return arr.reverse(); // Make it descending order (newest -> oldest)
+}
+
+export async function sortGameUpdates(gameUpdatesIDs, requestSize, totalUpdates) {
+    // Heap if requestSize << total updates
+    if (requestSize && requestSize < totalUpdates / 4) {
+        return topKUpdates(gameUpdatesIDs, requestSize);
     } else {
-        console.log(`Send to worker pool (offload ${gameUpdatesIDs.length} keys to sort)`);
-        return pool.exec('sortUpdates', [gameUpdatesIDs]);
+        let result = gameUpdatesIDs.flatMap(([appid, events]) =>
+            events ? events.map(({ posttime }) => [posttime, appid]) : []
+        );
+        // Otherwise Just sort everything
+        if (gameUpdatesIDs.length < SORT_THRESHOLD) {
+            // Inline sort (fast, no worker overhead)
+            result = gameUpdatesIDs.sort((a, b) => b[0] - a[0]);
+        } else {
+            console.log(`Send to worker pool (offload ${gameUpdatesIDs.length} keys to sort)`);
+            result = pool.exec('sortUpdates', [gameUpdatesIDs]);
+        }
+        if (requestSize) {
+            result = result.slice(0, requestSize);
+        }
+        return result;
     }
 }
 

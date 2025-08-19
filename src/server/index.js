@@ -78,7 +78,7 @@ console.log('ioRedis client initialized. Connecting to Redis server...');
 
 // --- Data Loading from Redis ---
 // --- Data Loading from Redis ---
-const getRedisValue = async (field, key = 'allSteamGamesUpdates') => {
+const getSingleRedisValue = async (field, key = 'allSteamGamesUpdates') => {
     try {
         const value = await redisClient.hGet(String(key), String(field)); // redis@5 uses camelCase
         return value ? JSON.parse(value) : null;
@@ -87,7 +87,7 @@ const getRedisValue = async (field, key = 'allSteamGamesUpdates') => {
         return null;
     }
 };
-// const getRedisValue = async (field, key = 'allSteamGamesUpdates') => {
+// const getSingleRedisValue = async (field, key = 'allSteamGamesUpdates') => {
 //     const value = await redisClient.hget(key, field);
 //     return value ? JSON.parse(value) : null;
 // };
@@ -690,7 +690,7 @@ const getGameUpdates = async (externalAppid) => {
                     return { posttime, body, gid, headline, event_type: event.event_type };
                 });
                 const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0);
-                const mostRecentPreviouslyKnownEventTime = (await getRedisValue(appid))?.[0]?.posttime ?? 0;
+                const mostRecentPreviouslyKnownEventTime = (await getSingleRedisValue(appid))?.[0]?.posttime ?? 0;
 
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[appid] =
@@ -1015,9 +1015,9 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
     notificationSubscribe(req);
 
     // Parallelized Redis fetches
-    const results = await Promise.all(
+    const gameUpdates = await Promise.all(
         appids.map(async (appid) => {
-            const events = await getRedisValue(appid);
+            const events = await getSingleRedisValue(appid);
             if (
                 events == null ||
                 app.locals.allSteamGamesUpdatesPossiblyChanged[appid] > (events[0]?.posttime ?? 0)
@@ -1028,17 +1028,14 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
         })
     );
 
-    // Build updates object
-    const updates = Object.fromEntries(results.filter(([, events]) => events != null));
-
-    // Flatten posttime/appid pairs
-    let gameUpdatesIDs = results.flatMap(([appid, events]) =>
-        events ? events.map(({ posttime }) => [posttime, appid]) : []
+    const updates = Object.fromEntries(gameUpdates.filter(([, events]) => events != null));
+    const totalUpdates = gameUpdates.reduce(
+        (sum, [, events]) => sum + (events ? events.length : 0),
+        0
     );
 
     // Sort by posttime descending
-    gameUpdatesIDs = await sortGameUpdates(gameUpdatesIDs, requestSize)
-
+    const gameUpdatesIDs = await sortGameUpdates(gameUpdates, requestSize, totalUpdates)
     tempMap[requestID] = {
         updates,
         gameUpdatesIDs,
@@ -1048,7 +1045,7 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
 
     // Clean up after 5 min
     setTimeout(() => delete tempMap[requestID], 1000 * 60 * 5);
-    res.send({ gameUpdatesIDs });
+    res.send({ gameUpdatesIDs, totalUpdates });
 });
 
 // GET endpoint that returns paginated results and
@@ -1109,7 +1106,7 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
 //     for (const appid of appids) {
 //         // (The appid is the second element in the array)
 //         // const events = app.locals.allSteamGamesUpdates[appid];
-//         const events = await getRedisValue(appid);
+//         const events = await getSingleRedisValue(appid);
 //         if (events == null || app.locals.allSteamGamesUpdatesPossiblyChanged[appid] > (events[0]?.posttime ?? 0)) {
 //             // Games that have been updated recently are more likely to have new updates, so prioritize based on last updated
 //             app.locals.appidsToCheckPriorityQueue.enqueue(appid, events?.[0]?.posttime);
@@ -1136,7 +1133,7 @@ app.get('/api/game-details', ensureAuthenticated, async (req, res) => {
                 .then(response => result = response?.data)
                 .catch(err => console.error(`Getting the game ${appid}'s details failed.`, err));
             // Since we bothered to get this game's details, let's hold on to them...
-            const { name, header_image, capsule_image, capsule_imagev5 } = result[appid]?.data ?? {};
+            const { name, header_image, capsule_image, capsule_imagev5 } = result?.[appid]?.data ?? {};
             app.locals.steamGameDetails[appid] = {
                 name,
                 header_image,

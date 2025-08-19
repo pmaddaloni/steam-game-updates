@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { execSync, fork, spawn } from 'child_process';
+import { RedisStore } from "connect-redis";
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
@@ -7,13 +8,12 @@ import session from 'express-session';
 import fs from 'fs';
 import http, { createServer } from 'http';
 import https from 'https';
-import Redis from 'ioredis';
 import PQueue from 'p-queue';
 import passport from 'passport';
 import SteamStrategy from 'passport-steam';
 import path from 'path';
 import pidusage from 'pidusage';
-import sessionfilestore from 'session-file-store';
+import { createClient } from 'redis';
 import url, { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import WebSocket, { WebSocketServer } from 'ws';
@@ -29,6 +29,7 @@ import { shutdownPool, sortGameUpdates } from './workers/hybridSorter.js';
 
 const environment = config.ENVIRONMENT || 'development'; // Default to 'development' if not set
 const PORT = process.env.PORT || 8080;
+const TWO_DAYS_MS = 1000 * 60 * 60 * 24 * 2;
 
 const __filename = fileURLToPath(import.meta.url);  // get the resolved path to the file
 const __dirname = path.dirname(__filename);         // get the name of the directory
@@ -64,20 +65,33 @@ process.on('SIGINT', async () => {
     process.exit(0);
 });
 
-// --- ioredis Client Setup ---
-// The ioredis client connects automatically, so no need for an explicit connect() call.
-const redisClient = new Redis(config.REDIS_URL || 'redis://localhost:6379');
+// --- redis Client Setup ---
+// The redis client connects automatically, so no need for an explicit connect() call.
+const redisClient = createClient({
+    url: process.env.REDIS_URL || "redis://localhost:6379",
+});
+// const redisClient = new Redis(config.REDIS_URL || 'redis://localhost:6379');
 
 redisClient.on('error', (err) => console.error('ioredis Client Error', err));
 
 console.log('ioRedis client initialized. Connecting to Redis server...');
 
 // --- Data Loading from Redis ---
+// --- Data Loading from Redis ---
 const getRedisValue = async (field, key = 'allSteamGamesUpdates') => {
-    const value = await redisClient.hget(key, field);
-    return value ? JSON.parse(value) : null;
+    try {
+        const value = await redisClient.hGet(String(key), String(field)); // redis@5 uses camelCase
+        return value ? JSON.parse(value) : null;
+    } catch (err) {
+        console.error("Error reading from Redis:", err);
+        return null;
+    }
 };
-
+// const getRedisValue = async (field, key = 'allSteamGamesUpdates') => {
+//     const value = await redisClient.hget(key, field);
+//     return value ? JSON.parse(value) : null;
+// };
+await redisClient.connect();
 // Passport session setup.
 //   To support persistent login sessions, Passport needs to be able to
 //   serialize users into and deserialize users out of the session.  Typically,
@@ -155,7 +169,7 @@ const serverRefreshTimeAndCount = fs.existsSync(path.join(__dirname, './storage/
     : JSON.stringify([new Date().getTime(), 0]); // Last time the server was refreshed (i.e. daily limit reset) and the last recorded daily limit
 const mobileSessions = fs.existsSync(path.join(__dirname, './storage/mobileSessions.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/mobileSessions.json'), { encoding: 'utf8', flag: 'r' })
-    : '[]';    // [ sessionID-1, sessionID-2, ... ]
+    : '{}';    // [ sessionID-1, sessionID-2, ... ]
 const userOwnedGames = fs.existsSync(path.join(__dirname, './storage/userOwnedGames.json')) ?
     fs.readFileSync(path.join(__dirname, './storage/userOwnedGames.json'), { encoding: 'utf8', flag: 'r' })
     : '{}';
@@ -215,7 +229,7 @@ app.locals.dailyLimit = DAILY_LIMIT - lastDailyLimitUsage;
 app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
 // Since passport isn't properly tracking mobile sessions, we need to track them ourselves.
 // We generate our own UUIDs to check against for the mobile app.
-app.locals.mobileSessions = new Set(JSON.parse(mobileSessions));
+app.locals.mobileSessions = JSON.parse(mobileSessions);
 app.locals.subscribedUserFilters = JSON.parse(subscribedUserFilters);
 
 // START Steam Game Updates WebSocket connection
@@ -463,12 +477,12 @@ const initializeFileWriterProcess = () => {
 };
 
 const ensureAuthenticated = function (req, res, next) {
-    if (req.isAuthenticated() || app.locals.mobileSessions.has(req.headers['session-id'])) {
+    if (req.isAuthenticated() || app.locals.mobileSessions[req.headers['session-id']] == null) {
         return next();
     }
     console.error('User is not authenticated:',
         req.user, req.headers['session-id'],
-        app.locals.mobileSessions.has(req.headers['session-id']));
+        app.locals.mobileSessions[req.headers['session-id']]);
     res.sendStatus(401);
 }
 
@@ -576,10 +590,41 @@ setTimeout(() => {
 
 // Log out all users every 2 days.
 // Maybe make this longer in the future.
+function scheduleExpiry(sessionID, session) {
+    const now = Date.now();
+    const delay = session.expiresAt - now;
+    const id = session.id + SUBSCRIPTION_IOS_ID_SUFFIX;
+    if (delay <= 0) {
+        // already expired
+        delete app.locals.mobileSessions[sessionID];
+        delete app.locals.gamesWithSubscriptions[id];
+        delete app.locals.subscribedUserFilters[id];
+        console.log(`Session ${sessionID} expired on load`);
+        return;
+    }
+
+    setTimeout(() => {
+        delete app.locals.mobileSessions[sessionID];
+        delete app.locals.gamesWithSubscriptions[id];
+        delete app.locals.subscribedUserFilters[id];
+        console.log(`Session ${sessionID} expired after TTL`);
+    }, delay);
+};
+
+// when adding a new session
+function addSession(sessionID, data) {
+    const expiresAt = Date.now() + TWO_DAYS_MS;
+    app.locals.mobileSessions[sessionID] = { ...data, expiresAt };
+    scheduleExpiry(sessionID, data);
+}
+
+// restore timers
+Object.entries(app.locals.mobileSessions).forEach(([key, session]) => {
+    scheduleExpiry(app.locals.mobileSessions, key, session);
+});
+
+// Clear
 setInterval(() => {
-    // crude, but will prevent stale sessions from piling up
-    // TODO: in the future keep track of how old a session is before removing
-    app.locals.mobileSessions = new Set();
     app.locals.gamesWithSubscriptions = {};
     app.locals.subscribedUserFilters = {};
     const dir = path.join(__dirname, './storage/passport-sessions')
@@ -649,7 +694,10 @@ const getGameUpdates = async (externalAppid) => {
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[appid] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
-                redisClient.hset('allSteamGamesUpdates', appid, JSON.stringify(mostRecentEvents));
+                // redisClient.hset('allSteamGamesUpdates', appid, JSON.stringify(mostRecentEvents));
+                await redisClient.hSet('allSteamGamesUpdates', {
+                    [String(appid)]: JSON.stringify(mostRecentEvents),
+                });
 
                 if (mostRecentEvents.length > 0 && mostRecentPreviouslyKnownEventTime < mostRecentEventTime) {
                     const name = app.locals.allSteamGameNames[appid];
@@ -766,7 +814,7 @@ setInterval(async () => {
                 type: 'writeFile',
                 payload: {
                     filename: './storage/mobileSessions.json',
-                    data: Array.from(app.locals.mobileSessions),
+                    data: app.locals.mobileSessions,
                 }
             });
             await fileWriterSend({
@@ -795,26 +843,33 @@ setInterval(async () => {
     }
 }, 30 * 60 * 1000);
 
-const FileStore = sessionfilestore(session);
 const sessionSecret = config.STEAM_GAME_UPDATES_SECRET;
+const store = new RedisStore({         // Use Redis as the session store
+    client: redisClient,
+    prefix: 'sessions:',
+    ttl: TWO_DAYS_MS / 1000, // redis expects seconds
+});
 const sessionOptions = {
     secret: sessionSecret,
     name: 'steam-game-updates',
     resave: false,
-    saveUninitialized: true,
-    store: new FileStore({                                          // Use FileStore as the session store
-        path: path.join(__dirname, './storage/passport-sessions'),  // Specify the directory to store session files
-        ttl: 60 * 60 * 24 * 2,                                      // Set the time to live for sessions to 2 days
-    })
+    saveUninitialized: false,       // Only save sessions if something is stored
+    store,
+    cookie: {
+        maxAge: TWO_DAYS_MS,        // Set the time to live for sessions to 2 days
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    }
 };
 const sessionMiddleware = session(sessionOptions);
-if (environment !== 'development') {
-    sessionOptions.cookie = {
-        sameSite: 'none',  // Required for cross-site requests
-        secure: true,      // Must be true when sameSite is 'none'
-        httpOnly: true,    // Recommended for security
-    };
-}
+// if (environment !== 'development') {
+//     sessionOptions.cookie = {
+//         ...sessionOptions.cookie,
+//         sameSite: 'none',  // Required for cross-site requests
+//         secure: true,      // Must be true when sameSite is 'none'
+//     };
+// }
 app.use(sessionMiddleware);
 app.set('trust proxy', 1);
 // Initialize Passport and use passport.session() middleware to support persistent login sessions.
@@ -1104,8 +1159,8 @@ app.get('/api/login', function (req, res) {
 app.post('/api/logout', function (req, res) {
     if (req.isAuthenticated()) {
         req.logout({}, () => { });
-    } else if (app.locals.mobileSessions.has(req.headers['session-id'])) {
-        app.locals.mobileSessions.delete(req.headers['session-id']);
+    } else if (app.locals.mobileSessions[req.headers['session-id']] != null) {
+        delete app.locals.mobileSessions[req.headers['session-id']];
     }
 
     notificationUnsubscribe(req);
@@ -1173,7 +1228,7 @@ app.get('/api/auth/steam/return',
             delete req.user.state;
             const user = encodeURIComponent(JSON.stringify(req.user))
             const sessionID = uuidv4().toString();
-            app.locals.mobileSessions.add(sessionID);
+            addSession(sessionID, { id: user.id });
             res.redirect(`${redirect_uri}?user=${user}&state=${state}&sessionID=${sessionID}`);
         } else {
             res.redirect('/close');
@@ -1190,7 +1245,7 @@ httpServer.on('upgrade', (request, socket, head) => {
         const sessionID = urlParts.query['session-id'];
 
         if ((request.session.passport && request.session.passport.user)
-            || (sessionID != null && app.locals.mobileSessions.has(sessionID))
+            || (sessionID != null && app.locals.mobileSessions[sessionID] != null)
         ) {
             const clientIP = request.headers['x-forwarded-for'] || request.socket.remoteAddress;
             if (request.session.passport) {

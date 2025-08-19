@@ -17,7 +17,7 @@ export async function sortGameUpdates(gameUpdatesIDs) {
         // Inline sort (fast, no worker overhead)
         return gameUpdatesIDs.sort((a, b) => b[0] - a[0]);
     } else {
-        console.log('Send to worker pool (offload heavy work)');
+        console.log(`Send to worker pool (offload ${gameUpdatesIDs.length} keys to sort)`);
         return pool.exec('sortUpdates', [gameUpdatesIDs]);
     }
 }

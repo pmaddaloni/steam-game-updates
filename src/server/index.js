@@ -915,27 +915,49 @@ app.get('/api/user', ensureAuthenticated, (req, res) => {
 
 app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
     if (req.app.locals.waitBeforeRetrying === false && req.app.locals.dailyLimit > 0) {
-        let result = '';
         const userID = req.query.id || req.user?.id;
         if (!userID) {
             return res.status(400).send(new Error('No user ID provided'));
         }
 
-        //  If a user has requested their games we need to process it asap.
-        await app.locals.requestQueue.add(
-            makeRequest(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${config.STEAM_API_KEY}&steamid=${userID}&include_appinfo=true&skip_unvetted_apps=true`),
-            { priority: 3 }   // Prioritize this request above all others
-        )
-            .then(response => { result = response })
-            .catch(err => {
-                console.error(`\nGetting the user ${req.query.id}'s owned games FAILED with code "${err.response?.status}"`
-                    + ` and message "${err.response?.statusText} (no code means the server didn't responsd).\n`, err);
-                app.locals.waitBeforeRetrying = true;
-                setTimeout(() => app.locals.waitBeforeRetrying = false, err.response?.retryAfter != null ? err.response?.retryAfter * 1000 : RETRY_WAIT_TIME);
-            });
-        app.locals.dailyLimit--;
-        console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count ?? 'no'} games`);
-        res.send(result.data?.response);
+        const cacheKey = `ownedGames:${userID}`;
+        try {
+            // Check Redis cache first
+            const cached = await redisClient.get(cacheKey);
+            if (cached) {
+                console.log(`Cache hit for user ${userID}`);
+                return res.send(JSON.parse(cached));
+            }
+
+            console.log(`Cache miss for user ${userID}, hitting Steam API...`);
+
+            // If not cached, hit Steam API (through your queue)
+            let result = '';
+            //  If a user has requested their games we need to process it asap.
+            await app.locals.requestQueue.add(
+                makeRequest(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${config.STEAM_API_KEY}&steamid=${userID}&include_appinfo=true&skip_unvetted_apps=true`),
+                { priority: 3 }   // Prioritize this request above all others
+            )
+                .then(response => { result = response })
+                .catch(err => {
+                    console.error(`\nGetting the user ${req.query.id}'s owned games FAILED with code "${err.response?.status}"`
+                        + ` and message "${err.response?.statusText} (no code means the server didn't responsd).\n`, err);
+                    app.locals.waitBeforeRetrying = true;
+                    setTimeout(() => app.locals.waitBeforeRetrying = false, err.response?.retryAfter != null ? err.response?.retryAfter * 1000 : RETRY_WAIT_TIME);
+                });
+            app.locals.dailyLimit--;
+
+            // Save response to Redis for 2 minutes (120s)
+            if (result?.data?.response) {
+                await redisClient.setEx(cacheKey, 120, JSON.stringify(result.data.response));
+            }
+
+            console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count ?? 'no'} games`);
+            res.send(result.data?.response);
+        } catch (err) {
+            console.error("Error in /api/owned-games:", err);
+            res.status(500).json({ error: "Internal server error" });
+        }
     } else {
         res.status(429).json({
             error: `The limit for requests has been reached`,

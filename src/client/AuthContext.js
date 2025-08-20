@@ -56,6 +56,7 @@ const defaultState = {
     menuFilters: [],
     totalGameUpdates: null,
     notificationsAllowed: false,
+    retrievalAmount: 500
 };
 
 const reducer = (state, { type, value }) => {

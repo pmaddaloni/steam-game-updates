@@ -161,7 +161,7 @@ export default function Body() {
             if (isWindows && gameList) {
                 gameList.classList.add(styles['os-windows']);
             }
-            const gameContainer = document.getElementById('update-container');
+            const gameContainer = document.getElementById('update-content');
             if (isWindows && gameList) {
                 gameContainer.classList.add(styles['os-windows']);
             }

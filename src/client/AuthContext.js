@@ -274,14 +274,11 @@ export const AuthProvider = function ({ children }) {
                 ownedGames[game.appid] = {
                     name: game.name,
                     img_icon_url: game.img_icon_url,
-                    img_logo_url: game.img_logo_url, // note: may be missing
+                    img_logo_url: game.img_logo_url, // this appears to be missing as of a year ago... https://bit.ly/3SYvabT
                 };
             }
             return ownedGames;
-        } /* else {
-            const ownedGames = localStorage.getItem('steam-game-updates-ownedGames');
-            return ownedGames && JSON.parse(ownedGames);
-        }; */
+        }
     }, [state.id])
 
     useEffect(() => {

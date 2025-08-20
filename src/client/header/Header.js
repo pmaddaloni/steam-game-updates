@@ -248,7 +248,7 @@ export default function Header() {
             top: -100,
             behavior: 'instant',
         });
-        if (value) {
+        if (value != null) {
             setTimeout(dispatch({ type: 'updateSearch', value }), 2000)
         }
     }

@@ -305,9 +305,9 @@ async function sendIndividualNotifications({ appid, name, eventTitle, eventType 
                 },
             }
         );
-        console.log(`Notification sent to users for app ${appid} (${name}):`, result.data);
+        console.log(`Notification sent to mobile users for app ${appid} (${name}):`, result.data);
     } catch (error) {
-        console.error(`Error sending notification to users for app ${appid}:`, error.response ? error.response.data : error.message);
+        console.error(`Error sending notification to mobile users for app ${appid}:`, error.response ? error.response.data : error.message);
     }
 }
 // End OneSignal client configuration
@@ -643,7 +643,44 @@ setInterval(async () => {
             }
         });
     }
-}, 60 * 60 * 1000)
+}, 60 * 60 * 1000);
+
+const pendingNotifications = new Map();
+function scheduleNotification({ appid, name, eventTitle, eventType, eventTime }) {
+    const key = `${appid}-${eventTime}`;
+
+    // If already scheduled, do nothing
+    if (pendingNotifications.has(key)) return;
+
+    // Schedule sending after 5 minutes
+    const timeout = setTimeout(() => {
+        // Remove from pending
+        pendingNotifications.delete(key);
+
+        // Actually send notifications
+        sendIndividualNotifications({ appid, name, eventTitle, eventType });
+
+        // Notify websocket clients
+        const usersToNotify = [...app.locals.gamesWithSubscriptions[appid]]
+            .filter(
+                userId =>
+                    app.locals.subscribedUserFilters[userId] == null ||
+                    app.locals.subscribedUserFilters[userId].includes(eventType) === false
+            );
+
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN && usersToNotify.includes(client.id)) {
+                client.send(JSON.stringify({
+                    appid,
+                    name,
+                    eventTitle,
+                }));
+            }
+        });
+    }, 2 * 60 * 1000); // wait to ensure they don't publish more changes about the same update
+    // Keep track so we don't schedule again
+    pendingNotifications.set(key, timeout);
+}
 
 const getGameUpdates = async (externalAppid) => {
     if (app.locals.dailyLimit > 0
@@ -685,6 +722,12 @@ const getGameUpdates = async (externalAppid) => {
                 });
                 const mostRecentEventTime = (mostRecentEvents[0]?.posttime ?? 0);
                 const mostRecentPreviouslyKnownEventTime = (await getSingleRedisValue(appid))?.[0]?.posttime ?? 0;
+                console.log(
+                    `\n${app.locals.allSteamGameNames[appid]} (${appid}):` +
+                    `\n   Last known event time: ${new Date(mostRecentEventTime).toLocaleString()}` +
+                    `\n   Previous known event time: ${new Date(mostRecentPreviouslyKnownEventTime).toLocaleString()}` +
+                    `\n   Newer than previous? ${mostRecentPreviouslyKnownEventTime < mostRecentEventTime}`
+                );
 
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[appid] =
@@ -698,25 +741,15 @@ const getGameUpdates = async (externalAppid) => {
                     const name = app.locals.allSteamGameNames[appid];
                     const eventType = mostRecentEvents[0]?.event_type;
                     const eventTitle = mostRecentEvents[0]?.headline || 'New Update';
-                    console.log(`Game ${name} (${appid}) has new updates (${eventType}):`, mostRecentEvents.length, 'events: ', new Date(mostRecentEventTime * 1000).toLocaleString());
+                    console.log(`${name} has new updates (${eventType}):`, mostRecentEvents.length, 'events: ', new Date(mostRecentEventTime * 1000).toLocaleString());
 
                     if (app.locals.gamesWithSubscriptions[appid] != null) {
-                        // Notify mobile users of the new updates.
-                        sendIndividualNotifications({ appid, name, eventTitle, eventType });
-
-                        // Websocket clients to notify.
-                        const usersToNotify = [...app.locals.gamesWithSubscriptions[appid]]
-                            .filter(userId => app.locals.subscribedUserFilters[userId] == null
-                                || app.locals.subscribedUserFilters[userId].includes(eventType) === false);
-
-                        wss.clients.forEach(client => {
-                            if (client.readyState === WebSocket.OPEN && usersToNotify.includes(client.id)) {
-                                client.send(JSON.stringify({
-                                    appid,
-                                    name,
-                                    eventTitle,
-                                }));
-                            }
+                        scheduleNotification({
+                            appid,
+                            name,
+                            eventTitle,
+                            eventType,
+                            eventTime: mostRecentEventTime
                         });
                     }
                 }

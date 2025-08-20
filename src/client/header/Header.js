@@ -157,7 +157,7 @@ export default function Header() {
         setInteractionDisabled(loadingProgress < 100);
         if (searchValue && loadingProgress == null) {
             setSearchValue('');
-            scrollToTopOfList(searchValue);
+            scrollToTopOfList();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadingProgress])
@@ -248,7 +248,9 @@ export default function Header() {
             top: -100,
             behavior: 'instant',
         });
-        setTimeout(dispatch({ type: 'updateSearch', value }), 2000)
+        if (value) {
+            setTimeout(dispatch({ type: 'updateSearch', value }), 2000)
+        }
     }
 
     const shouldShowPopup = (shouldShow) => {
@@ -411,6 +413,7 @@ export default function Header() {
                                         maxLength="6"
                                         value={fetchUpdatesAmount}
                                         onChange={onNumberChange}
+                                        onFocus={e => e.target.select()}
                                         onBlur={onBlur}
                                         onKeyUp={({ code, target }) => {
                                             if (code === 'Enter') {

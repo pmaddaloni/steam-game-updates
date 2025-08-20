@@ -69,7 +69,7 @@ export default function Body() {
     }, [filters, ownedGames]);
 
     useEffect(() => {
-        if (loadingProgress == null) {
+        if (loadingProgress == null && retrievalAmountRef.current) {
             gameUpdatesRef.current = gameUpdates;
         } else if (loadingProgress === 0) {
             retrievalAmountRef.current = retrievalAmount;

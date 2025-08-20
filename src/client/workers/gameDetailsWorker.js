@@ -31,7 +31,7 @@ onmessage = async ({ data: {
     }
 
     const requestID = uuidv4();
-    // const loadingThreshold = 4;
+    const loadingThreshold = 4;
     try {
         // generate a UUID
         // first post all messages along with this UUID
@@ -47,9 +47,9 @@ onmessage = async ({ data: {
         postMessage({ loadingProgress: (++numberOfRequestsSoFar / totalNumberOfRequests) * 100 });
         let ownedGamesWithUpdates = {};
         do {
-            // if (numberOfRequestsSoFar < loadingThreshold) {
-            //     ownedGamesWithUpdates = {};
-            // }
+            if (numberOfRequestsSoFar < loadingThreshold) {
+                ownedGamesWithUpdates = {};
+            }
             const result = await axios.get('/api/beta/game-updates-for-owned-games',
                 { params: { request_id: requestID, fetch_size: requestSize } });
             const { updates, hasMore } = result.data;
@@ -58,15 +58,15 @@ onmessage = async ({ data: {
                 ownedGamesWithUpdates[appid].events = events;
             }
             postMessage({ loadingProgress: (++numberOfRequestsSoFar / totalNumberOfRequests) * 100 });
-            // if (numberOfRequestsSoFar < loadingThreshold) {
-            postMessage({ ownedGamesWithUpdates });
-            // }
+            if (numberOfRequestsSoFar < loadingThreshold) {
+                postMessage({ ownedGamesWithUpdates });
+            }
             if (hasMore === false) {
                 break;
             }
         } while (numberOfRequestsSoFar !== totalNumberOfRequests)
-        postMessage({ loadingProgress: 100 });
         postMessage({ ownedGamesWithUpdates });
+        postMessage({ loadingProgress: 100 });
     } catch (err) {
         console.error('Retrieving all game updates failed.', err);
         postMessage(err);

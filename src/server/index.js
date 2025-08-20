@@ -71,7 +71,6 @@ process.on('SIGINT', async () => {
 const redisClient = createClient({
     url: process.env.REDIS_URL || "redis://localhost:6379",
 });
-// const redisClient = new Redis(config.REDIS_URL || 'redis://localhost:6379');
 
 redisClient.on('error', (err) => console.error('ioredis Client Error', err));
 
@@ -88,10 +87,7 @@ const getSingleRedisValue = async (field, key = 'allSteamGamesUpdates') => {
         return null;
     }
 };
-// const getSingleRedisValue = async (field, key = 'allSteamGamesUpdates') => {
-//     const value = await redisClient.hget(key, field);
-//     return value ? JSON.parse(value) : null;
-// };
+
 await redisClient.connect();
 // Passport session setup.
 //   To support persistent login sessions, Passport needs to be able to
@@ -693,7 +689,7 @@ const getGameUpdates = async (externalAppid) => {
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[appid] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
-                // redisClient.hset('allSteamGamesUpdates', appid, JSON.stringify(mostRecentEvents));
+
                 await redisClient.hSet('allSteamGamesUpdates', {
                     [String(appid)]: JSON.stringify(mostRecentEvents),
                 });

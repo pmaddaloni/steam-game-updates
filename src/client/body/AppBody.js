@@ -8,6 +8,8 @@ import GameUpdateListComponent from './GameUpdateListComponent.js';
 
 import logo from './steam-logo.svg';
 
+const APP_STORE_URL = 'https://apps.apple.com/us/app/pc-game-updates/id6749399019';
+
 export default function Body() {
     const itemsPerPage = 25;
     const {
@@ -293,7 +295,7 @@ export default function Body() {
                                 <small><b>**</b>There is an iOS app, with an Android app in the works.<b>**</b></small>
                                 <br />
                                 <a
-                                    href={'https://apps.apple.com/us/app/cheerswipe/id1468158095?ls=1'}
+                                    href={APP_STORE_URL}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     aria-label="Download on the App Store"

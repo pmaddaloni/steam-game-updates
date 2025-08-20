@@ -14,7 +14,9 @@ export function getClientInfo() {
     // --- Platform detection ---
     if (navigator.userAgentData && navigator.userAgentData.platform) {
         info.platform = navigator.userAgentData.platform.toLowerCase();
-        info.isMobile = navigator.userAgentData.mobile || false;
+        if ("mobile" in navigator.userAgentData) {
+            info.isMobile = navigator.userAgentData.mobile;
+        }
     } else {
         if (/windows/.test(ua)) info.platform = "windows";
         else if (/mac/.test(ua)) info.platform = "mac";

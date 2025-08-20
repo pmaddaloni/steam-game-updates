@@ -136,7 +136,23 @@ const reducer = (state, { type, value }) => {
             return { ...state, filters: value, menuFilters: [...filterSet] }
         case 'setNotificationsAllowed':
             if (Notification.permission === "granted") {
-                localStorage.setItem('steam-game-updates-notifications-allowed', JSON.stringify(value));
+                if (state.id !== '' && state.id != null) {
+                    localStorage.setItem('steam-game-updates-notifications-allowed', JSON.stringify(value));
+                    if (value) {
+                        axios.post('/api/notification/subscribe', {
+                            id: state.id + CLIENT_INFO,
+                            filters: state.filters,
+                            appids: Object.keys(state.ownedGames ?? [])
+                        });
+                    } else {
+                        axios.post('/api/notification/unsubscribe', {
+                            id: state.id + CLIENT_INFO,
+                            filters: state.filters,
+                            appids: Object.keys(state.ownedGames ?? [])
+                        });
+                    }
+                    return { ...state, notificationsAllowed: value }
+                }
                 return { ...state, notificationsAllowed: value }
             }
             return state;

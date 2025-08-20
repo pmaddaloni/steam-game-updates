@@ -5,6 +5,7 @@ import { Popover } from 'react-tiny-popover';
 import LoadingBar from "react-top-loading-bar";
 
 import classNames from 'classnames';
+import { getClientInfo } from '../../utilities/utils.js';
 import { useAuth } from '../AuthContext.js';
 import styles from './header-styles.module.scss';
 import steamGameUpdatesImg from './steam-game-updates.svg';
@@ -148,6 +149,7 @@ export default function Header() {
     const [isPopoverOpen, setIsOpen] = useState(false);
     const [filters, filtersDispatch] = useReducer(reducer, defaultFilters)
     const dispatchFilterChanges = type => dispatch({ type: 'updateFilters', value: type });
+    const isMobile = getClientInfo().isMobile;
 
     useEffect(() => {
         (menuFilters).forEach(f => filtersDispatch(f))
@@ -317,7 +319,7 @@ export default function Header() {
                     <img className={styles['header-img']} src={steamGameUpdatesImg} alt="steam game updates logo" />
                     <div>Steam Game Updates</div>
                 </div>
-                {userID !== '' &&
+                {userID !== '' && !isMobile &&
                     <div className={styles['input-container']}>
                         <input
                             title="Press the 's' hotkey to start searching"
@@ -507,7 +509,7 @@ export default function Header() {
                             <div className={styles['menu-caret']}>&#x2304;</div>
                         </div>
                     </Popover>
-                    : <button className={styles.login} onClick={login} />
+                    : !isMobile && <button className={styles.login} onClick={login} />
                 }
             </div>
             <LoadingBar

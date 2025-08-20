@@ -28,12 +28,14 @@ export default function Body() {
     const retrievalAmountRef = useRef(retrievalAmount);
     const gameUpdates = retrievalAmountRef.current ?
         externalGameUpdates.slice(0, retrievalAmountRef.current) : externalGameUpdates;
+    const isMobile = getClientInfo().isMobile;
 
     const createGameComponents = useCallback((gamesList, showMore = false) => {
         let componentIndex = showMore ? currentGameComponentsRef.current.length : 0;
         let currentIndex = showMore ? currentListIndexRef.current : 0;
         const gamesArray = gamesList.slice(currentIndex);
         const newList = [];
+
         for (const [posttime, appid] of gamesArray) {
             currentIndex++;
             if (ownedGames[appid] == null) {
@@ -280,35 +282,54 @@ export default function Body() {
 
     return (
         <div className={styles["app-body"]} >
-            {Object.keys(gameUpdates).length === 0 || gameComponents.length === 0 ?
+            {Object.keys(gameUpdates).length === 0 || gameComponents.length === 0 || isMobile ?
                 <div className={styles['loading-container']}>
                     <img src={logo} className="App-logo" alt="logo" />
                     <p>
-                        {id === '' ?
+                        {isMobile ?
                             <>
-                                Log in to see all updates for your owned Steam games.
+                                This site isn't designed for a mobile screen at the moment.
                                 <br />
-                                <small><b>**</b>Your Steam profile must be public for this to work.<b>**</b></small>
-                            </>
-                            :
-                            loadingProgress === 100 && ownedGames != null && filteredList == null ?
+                                <small><b>**</b>There is an iOS app, with an Android app in the works.<b>**</b></small>
+                                <br />
+                                <a
+                                    href={'https://apps.apple.com/us/app/cheerswipe/id1468158095?ls=1'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label="Download on the App Store"
+                                >
+                                    <img
+                                        className={styles["app-store-button"]}
+                                        src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg"
+                                        alt="Download on the App Store"
+                                    />
+                                </a>
+                            </> :
+                            id === '' ?
                                 <>
-                                    It seems like you don't own any Steam games...
+                                    Log in to see all updates for your owned Steam games.
                                     <br />
-                                    <small>
-                                        <b>**</b>
-                                        {' Make sure that your '}
-                                        <a href={`https://steamcommunity.com/profiles/${id}/edit/settings`} target='_blank' rel="noreferrer">"Game Details"</a>
-                                        {' are set to "Public" '}
-                                        <b>**</b>
-                                    </small>
-                                    <br />
-                                    <small><b>**</b> If this isn't the case try logging out and then back in. <b>**</b></small>
+                                    <small><b>**</b>Your Steam profile must be public for this to work.<b>**</b></small>
                                 </>
-                                : loadingProgress === 100 && filteredList != null ?
-                                    <>No search results - try something else...</>
-                                    :
-                                    <>Gathering updates for your owned games - hang tight...</>
+                                :
+                                loadingProgress === 100 && ownedGames != null && filteredList == null ?
+                                    <>
+                                        It seems like you don't own any Steam games...
+                                        <br />
+                                        <small>
+                                            <b>**</b>
+                                            {' Make sure that your '}
+                                            <a href={`https://steamcommunity.com/profiles/${id}/edit/settings`} target='_blank' rel="noreferrer">"Game Details"</a>
+                                            {' are set to "Public" '}
+                                            <b>**</b>
+                                        </small>
+                                        <br />
+                                        <small><b>**</b> If this isn't the case try logging out and then back in. <b>**</b></small>
+                                    </>
+                                    : loadingProgress === 100 && filteredList != null ?
+                                        <>No search results - try something else...</>
+                                        :
+                                        <>Gathering updates for your owned games - hang tight...</>
                         }
                     </p>
                 </div> :

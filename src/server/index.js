@@ -259,60 +259,59 @@ const ONE_SIGNAL_APP_ID = config.ONE_SIGNAL_APP_ID;
 const ONE_SIGNAL_REST_API_KEY = config.ONE_SIGNAL_REST_API_KEY;
 
 async function sendIndividualNotifications({ appid, name, eventTitle, eventType }) {
-    if (app.locals.gamesWithSubscriptions[appid] != null) {
-        let usersToNotify =
-            [...app.locals.gamesWithSubscriptions[appid]]
-                .filter(userId => userId.endsWith(SUBSCRIPTION_IOS_ID_SUFFIX))
-                .filter(userId => app.locals.subscribedUserFilters[userId]?.includes(eventType) === false);
+    let usersToNotify =
+        [...app.locals.gamesWithSubscriptions[appid]]
+            .filter(userId => userId.endsWith(SUBSCRIPTION_IOS_ID_SUFFIX))
+            .filter(userId => app.locals.subscribedUserFilters[userId] == null
+                || app.locals.subscribedUserFilters[userId].includes(eventType) === false);
 
-        if (usersToNotify.length === 0) {
-            return;
+    if (usersToNotify.length === 0) {
+        return;
+    }
+    try {
+        const icons = [
+            `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/capsule_616x353.jpg`,
+            `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/logo.png`,
+            `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`,
+            `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg`,
+            // `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${ownedGames[appid].img_logo_url}.jpg`,
+            // `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${ownedGames[appid].img_icon_url}.jpg`
+            'api'
+        ]
+        const fullUrl = `http://localhost:${PORT}/api/game-details`;
+        const validImageURL = await getViableImageURL(icons, 'id', appid, name, fullUrl);
+
+        const notification = {
+            app_id: ONE_SIGNAL_APP_ID,
+            target_channel: 'push',
+            contents: {
+                'en': eventTitle,
+            },
+            headings: {
+                'en': `New Update for ${name}`,
+            },
+            ios_attachments: {
+                'id': validImageURL
+            },
+            'include_aliases': {
+                'external_id': usersToNotify
+            },
+            ios_badgeType: 'Increase',
+            ios_badgeCount: 1,
         }
-        try {
-            const icons = [
-                `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/capsule_616x353.jpg`,
-                `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/logo.png`,
-                `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`,
-                `https://steamcdn-a.akamaihd.net/steam/apps/${appid}/header.jpg`,
-                // `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${ownedGames[appid].img_logo_url}.jpg`,
-                // `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${ownedGames[appid].img_icon_url}.jpg`
-                'api'
-            ]
-            const fullUrl = `http://localhost:${PORT}/api/game-details`;
-            const validImageURL = await getViableImageURL(icons, 'id', appid, name, fullUrl);
-
-            const notification = {
-                app_id: ONE_SIGNAL_APP_ID,
-                target_channel: 'push',
-                contents: {
-                    'en': eventTitle,
+        const result = await axios.post(
+            'https://onesignal.com/api/v1/notifications?c=push',
+            notification,
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Key ${ONE_SIGNAL_REST_API_KEY}`,
                 },
-                headings: {
-                    'en': `New Update for ${name}`,
-                },
-                ios_attachments: {
-                    'id': validImageURL
-                },
-                'include_aliases': {
-                    'external_id': usersToNotify
-                },
-                ios_badgeType: 'Increase',
-                ios_badgeCount: 1,
             }
-            const result = await axios.post(
-                'https://onesignal.com/api/v1/notifications?c=push',
-                notification,
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Key ${ONE_SIGNAL_REST_API_KEY}`,
-                    },
-                }
-            );
-            console.log(`Notification sent to users for app ${appid} (${name}):`, result.data);
-        } catch (error) {
-            console.error(`Error sending notification to users for app ${appid}:`, error.response ? error.response.data : error.message);
-        }
+        );
+        console.log(`Notification sent to users for app ${appid} (${name}):`, result.data);
+    } catch (error) {
+        console.error(`Error sending notification to users for app ${appid}:`, error.response ? error.response.data : error.message);
     }
 }
 // End OneSignal client configuration
@@ -338,10 +337,10 @@ function initializeSteamWebPipes() {
             }
             const appids = Object.keys(apps);
             for (const appid of appids) {
-                app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = new Date().getTime() / 1000; // convert to seconds from ms
+                app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = Math.floor(Date.now() / 1000); // convert to seconds
                 // If at least one subscribed user owns the game, we should check it.
                 if (app.locals.gamesWithSubscriptions[appid]?.size > 0) {
-                    console.log(`Game ${appid} has updates, checking for changes...`);
+                    console.log(`Game ${appid} has updates, checking for changes if a user owns it...`, !!app.locals.gamesWithSubscriptions[appid]);
                     app.locals.appidsToCheckPriorityQueue.enqueue(appid, app.locals.allSteamGamesUpdatesPossiblyChanged[appid]);
                 }
             }
@@ -703,15 +702,16 @@ const getGameUpdates = async (externalAppid) => {
                     const name = app.locals.allSteamGameNames[appid];
                     const eventType = mostRecentEvents[0]?.event_type;
                     const eventTitle = mostRecentEvents[0]?.headline || 'New Update';
-                    // console.log(`Game ${name} (${appid}) has new updates (${eventType}):`, mostRecentEvents.length, 'events, most recent at', new Date(mostRecentEventTime * 1000).toLocaleString());
-                    // console.log(app.locals.subscribedUserFilters, '\n', app.locals.gamesWithSubscriptions[appid], '\n')
-                    // Notify mobile users of the new updates.
-                    sendIndividualNotifications({ appid, name, eventTitle, eventType });
+                    console.log(`Game ${name} (${appid}) has new updates (${eventType}):`, mostRecentEvents.length, 'events: ', new Date(mostRecentEventTime * 1000).toLocaleString());
 
-                    // Also let web clients know a new update has been processed.
                     if (app.locals.gamesWithSubscriptions[appid] != null) {
+                        // Notify mobile users of the new updates.
+                        sendIndividualNotifications({ appid, name, eventTitle, eventType });
+
+                        // Websocket clients to notify.
                         const usersToNotify = [...app.locals.gamesWithSubscriptions[appid]]
-                            .filter(userId => app.locals.subscribedUserFilters[userId]?.includes(eventType) === false)
+                            .filter(userId => app.locals.subscribedUserFilters[userId] == null
+                                || app.locals.subscribedUserFilters[userId].includes(eventType) === false);
 
                         wss.clients.forEach(client => {
                             if (client.readyState === WebSocket.OPEN && usersToNotify.includes(client.id)) {

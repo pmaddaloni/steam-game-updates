@@ -38,6 +38,48 @@ function parseTableAttributes(bsCode) {
     return `<${tagName} style="${styleString} background-color:${tagName === 'th' ? '#18396aff' : '#3d5f8eff'}; border: 1px solid #808080; padding: 8px;">`;
 };
 
+function getSteamLinkText(url) {
+    try {
+        const u = new URL(url);
+
+        // Steam Workshop items
+        if (u.hostname.includes('steamcommunity.com') && u.pathname.includes('/sharedfiles/filedetails')) {
+            const id = u.searchParams.get('id');
+            return `Steam Workshop Item${id ? ' ' + id : ''}`;
+        }
+
+        // Steam store apps
+        if (u.hostname.includes('store.steampowered.com') && u.pathname.startsWith('/app/')) {
+            const parts = u.pathname.split('/').filter(Boolean);
+            const appId = parts[1];
+            const maybeName = parts[2] ? decodeURIComponent(parts[2]).replaceAll('_', ' ') : null;
+            return maybeName || `Steam App ${appId}`;
+        }
+
+        // Steam news
+        if (u.hostname.includes('store.steampowered.com') && u.pathname.startsWith('/news/app/')) {
+            const parts = u.pathname.split('/').filter(Boolean);
+            const appId = parts[2];
+            return `Steam News for App ${appId}`;
+        }
+
+        // Steam community profiles
+        if (u.hostname.includes('steamcommunity.com') && u.pathname.startsWith('/id/')) {
+            const username = u.pathname.split('/')[2];
+            return `Steam Profile ${username}`;
+        }
+        if (u.hostname.includes('steamcommunity.com') && u.pathname.startsWith('/profiles/')) {
+            const profileId = u.pathname.split('/')[2];
+            return `Steam Profile ${profileId}`;
+        }
+
+        // Default fallback
+        return url;
+    } catch {
+        return url; // in case it's not a valid URL
+    }
+}
+
 function formatTextToHtml(text) {
     let html = '';
     const lines = text.split('\n');
@@ -46,6 +88,7 @@ function formatTextToHtml(text) {
         if (words != null) {
             let isImage = false;
             let isTable = false;
+            let currentDynamicLink;
             for (const word of words) {
                 if (word === '[b]') {
                     html += '<strong>';
@@ -120,13 +163,23 @@ function formatTextToHtml(text) {
                     html += `<a style="text-decoration: none;" href=${url} target="_blank" rel="noopener noreferrer">`;
                 } else if (word === '[/url]') {
                     html += '</a>';
-                } else if (word.startsWith('[dynamiclink href=')) {
-                    const startIndex = word.indexOf('=') + 1
-                    const url = word.slice(startIndex, -1);
-                    const gameName = url.replaceAll('"', '').split('/')?.filter(Boolean)?.pop()?.replaceAll('_', ' ');
-                    html += `<p><a href=${url} target="_blank" rel="noopener noreferrer">${gameName}`;
-                } else if (word === '[/dynamiclink]') {
-                    html += '</a></p>';
+                } else if (word.startsWith('[dynamiclink')) {
+                    const match = word.match(/href\s*=\s*("([^"]+)"|'([^']+)')/i);
+                    const rawUrl = match ? (match[2] || match[3]) : '';
+                    const url = rawUrl.trim();
+                    const safeUrl = /^https?:\/\//i.test(url) ? url : '#';
+                    currentDynamicLink = { url: safeUrl, innerText: '' };
+                }
+                else if (currentDynamicLink && word === '[/dynamiclink]') {
+                    let linkText = currentDynamicLink.innerText.trim();
+                    if (!linkText) {
+                        linkText = getSteamLinkText(currentDynamicLink.url);
+                    }
+                    html += `<p><a href="${currentDynamicLink.url}"  style="text-decoration: none" target="_blank" rel="noopener nofollow ugc">${linkText}</a></p>`;
+                    currentDynamicLink = null;
+                }
+                else if (currentDynamicLink) {
+                    currentDynamicLink.innerText += (currentDynamicLink.innerText ? ' ' : '') + word;
                 } else if (word.startsWith('[previewyoutube=')) {
                     const youtubeVideoID = word.slice(16, -1).replace('"', '');
                     const url = 'https://www.youtube.com/embed/' + youtubeVideoID;

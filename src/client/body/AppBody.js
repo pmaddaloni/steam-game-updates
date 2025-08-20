@@ -68,6 +68,22 @@ export default function Body() {
         return result;
     }, [filters, ownedGames]);
 
+    // Set appropriate styles for Windows specifically
+    useEffect(() => {
+        if (gameComponents.length !== 0) {
+            const isWindows = getClientInfo().platform === 'windows';
+            const gameList = document.getElementById('game-list');
+
+            if (isWindows && gameList) {
+                gameList.classList.add(styles['os-windows']);
+            }
+            const gameContainer = document.getElementById('update-container');
+            if (isWindows && gameList) {
+                gameContainer.classList.add(styles['os-windows']);
+            }
+        }
+    }, [gameComponents.length]);
+
     useEffect(() => {
         if (loadingProgress == null && retrievalAmountRef.current) {
             gameUpdatesRef.current = gameUpdates;
@@ -76,6 +92,23 @@ export default function Body() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadingProgress]);
+
+    useEffect(() => {
+        if (loadingProgress != null) {
+            setSelectedGame(null);
+        }
+        const newComponents = createGameComponents(filteredList ?? gameUpdates);
+        setGameComponents(newComponents);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [filters, filteredList]);
+
+    useEffect(() => {
+        if (gameComponents.length === 0) {
+            const gameComponents = createGameComponents(gameUpdates);
+            setGameComponents(gameComponents);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ownedGames]);
 
     const insertIntoExistingDataList = (newUpdates) => {
         const getUpdate = (appid, posttime) => {
@@ -133,8 +166,11 @@ export default function Body() {
         newList = newList.map((component, idx) =>
             cloneElement(component, { index: idx })
         );
-        currentListIndexRef.current = currentIndex;
-        currentGameComponentsRef.current = newList;
+        if (newList.length > currentGameComponentsRef.current.length) {
+            currentListIndexRef.current = currentIndex;
+            currentGameComponentsRef.current = newList;
+            setGameComponents(newList);
+        }
     };
 
     useEffect(() => {
@@ -151,41 +187,6 @@ export default function Body() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadingProgress]);
-
-    // Set appropriate styles for Windows specifically
-    useEffect(() => {
-        if (gameComponents.length !== 0) {
-            const isWindows = getClientInfo().platform === 'windows';
-            const gameList = document.getElementById('game-list');
-
-            if (isWindows && gameList) {
-                gameList.classList.add(styles['os-windows']);
-            }
-            const gameContainer = document.getElementById('update-container');
-            if (isWindows && gameList) {
-                gameContainer.classList.add(styles['os-windows']);
-            }
-        }
-    }, [gameComponents.length]);
-
-    useEffect(() => {
-        if (loadingProgress != null) {
-            setSelectedGame(null);
-        }
-        const newComponents = createGameComponents(filteredList ?? gameUpdates);
-        setGameComponents(newComponents);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filters, filteredList]);
-
-    useEffect(() => {
-        if (gameComponents.length === 0) {
-            const gameComponents = createGameComponents(gameUpdates);
-            setGameComponents(gameComponents);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [ownedGames]);
-
-
 
     useEffect(() => {
         const previousSelectedGame = document.getElementsByClassName(styles.selected)[0];

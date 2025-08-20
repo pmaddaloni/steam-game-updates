@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import WebSocket, { WebSocketServer } from 'ws';
 
 import config from '../../config.js';
+import tempCache from '../utilities/tempCache.js';
 import {
     createWebSocketConnector,
     getViableImageURL,
@@ -290,9 +291,7 @@ async function sendIndividualNotifications({ appid, name, eventTitle, eventType 
                     'en': `New Update for ${name}`,
                 },
                 ios_attachments: {
-                    'id': {
-                        'url': validImageURL
-                    }
+                    'id': validImageURL
                 },
                 'include_aliases': {
                     'external_id': usersToNotify
@@ -1022,13 +1021,11 @@ app.post('/api/notifications/filters', ensureAuthenticated, async (req, res) => 
     res.sendStatus(200);
 });
 
-// A temp map entry with the UUID from POST
-// lookup all entries and then store in map
-const tempMap = {};
+
 app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (req, res) => {
     const appids = (req.body.appids ?? []).map(Number);
     const requestID = req.body.request_id;
-    const requestSize = parseInt(req.body.request_size ?? 0);
+    const requestSize = req.body.request_size && parseInt(req.body.request_size);
 
     if (!requestID) {
         res.sendStatus(406);
@@ -1063,15 +1060,13 @@ app.post('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (r
 
     // Sort by posttime descending
     const gameUpdatesIDs = await sortGameUpdates(gameUpdates, requestSize, totalUpdates);
-    tempMap[requestID] = {
+    tempCache.set(requestID, {
         updates,
         gameUpdatesIDs,
         retrievalAmount: requestSize || null,
         cursor: 0,
-    };
+    });
 
-    // Clean up after 2 min
-    setTimeout(() => delete tempMap[requestID], 1000 * 60 * 2);
     res.send({ gameUpdatesIDs, totalUpdates });
 });
 
@@ -1081,7 +1076,7 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
     const requestID = req.query.request_id;
     const requestSize = parseInt(req.query.fetch_size ?? '150', 10);
 
-    const entry = tempMap[requestID];
+    const entry = tempCache.get(requestID);
     if (entry == null) {
         return res.sendStatus(404);
     }
@@ -1115,7 +1110,7 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
             Object.keys(updates).length === 0 ||
             newCursor >= gameUpdatesIDs.length
         ) {
-            delete tempMap[requestID];
+            tempCache.deleteKey(requestID);
             hasMore = false;
         }
 
@@ -1180,7 +1175,7 @@ app.post('/api/notification/unsubscribe', ensureAuthenticated, function (req, re
     }
 });
 
-app.post('api/notification/subscribe', ensureAuthenticated, async (req, res) => {
+app.post('/api/notification/subscribe', ensureAuthenticated, async (req, res) => {
     try {
         notificationSubscribe(req);
         res.sendStatus(200);

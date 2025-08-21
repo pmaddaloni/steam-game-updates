@@ -23,6 +23,7 @@ export default function Body() {
     } = useAuth();
     const [selectedGame, setSelectedGame] = useState(null);
     const [gameComponents, setGameComponents] = useState([]);
+    const [isMobile, setIsMobile] = useState(getClientInfo().isMobile);
     const currentListIndexRef = useRef(0);
     const currentGameComponentsRef = useRef([]);
     const gameUpdatesRef = useRef(null);
@@ -30,7 +31,12 @@ export default function Body() {
     const retrievalAmountRef = useRef(retrievalAmount);
     const gameUpdates = retrievalAmountRef.current ?
         externalGameUpdates.slice(0, retrievalAmountRef.current) : externalGameUpdates;
-    const isMobile = getClientInfo().isMobile;
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(getClientInfo().isMobile);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, [])
 
     const createGameComponents = useCallback((gamesList, showMore = false) => {
         let componentIndex = showMore ? currentGameComponentsRef.current.length : 0;

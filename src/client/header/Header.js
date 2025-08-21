@@ -141,6 +141,7 @@ export default function Header() {
         gameUpdates,
         totalGameUpdates
     } = useAuth();
+    const [isMobile, setIsMobile] = useState(getClientInfo().isMobile);
     const [interactionDisabled, setInteractionDisabled] = useState(true);
     const [fetchAllUpdates, setFetchAllUpdates] = useState(retrievalAmount == null);
     const [fetchUpdatesAmount, setFetchUpdatesAmount] = useState((retrievalAmount ?? '').toString());
@@ -149,7 +150,12 @@ export default function Header() {
     const [isPopoverOpen, setIsOpen] = useState(false);
     const [filters, filtersDispatch] = useReducer(reducer, defaultFilters)
     const dispatchFilterChanges = type => dispatch({ type: 'updateFilters', value: type });
-    const isMobile = getClientInfo().isMobile;
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(getClientInfo().isMobile);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, [])
 
     useEffect(() => {
         (menuFilters).forEach(f => filtersDispatch(f))
@@ -503,11 +509,12 @@ export default function Header() {
                             </ul>
                         )}
                     >
-                        <div className={classNames(interactionDisabled ? styles['menu-disabled'] : null, isPopoverOpen ? styles.active : null, styles.menu)} onClick={() => shouldShowPopup(!isPopoverOpen)}>
-                            <img src={photos[0]?.value} alt='user-avatar' />
-                            <div className={styles.user} >{displayName}</div>
-                            <div className={styles['menu-caret']}>&#x2304;</div>
-                        </div>
+                        {isMobile ? <></> :
+                            <div className={classNames(interactionDisabled ? styles['menu-disabled'] : null, isPopoverOpen ? styles.active : null, styles.menu)} onClick={() => shouldShowPopup(!isPopoverOpen)}>
+                                <img src={photos[0]?.value} alt='user-avatar' />
+                                <div className={styles.user} >{displayName}</div>
+                                <div className={styles['menu-caret']}>&#x2304;</div>
+                            </div>}
                     </Popover>
                     : !isMobile && <button className={styles.login} onClick={login} />
                 }

@@ -4,38 +4,89 @@ export const SUBSCRIPTION_BROWSER_ID_SUFFIX = ' - browser';
 export const SUBSCRIPTION_IOS_ID_SUFFIX = ' - ios';
 
 export function getClientInfo() {
-    const ua = navigator.userAgent.toLowerCase();
+    const hasWindow = typeof window !== "undefined";
+    const ua = hasWindow ? navigator.userAgent : "";
+    const uaLower = ua.toLowerCase();
+    const uaData = hasWindow ? navigator.userAgentData : null;
+
     const info = {
         platform: "unknown",
         browser: "unknown",
         isMobile: false,
+        isTablet: false,
+        viewport: {
+            width: hasWindow ? window.innerWidth : null,
+            height: hasWindow ? window.innerHeight : null,
+            dpr: hasWindow ? window.devicePixelRatio || 1 : 1,
+        },
+        touch: {
+            maxTouchPoints: hasWindow ? navigator.maxTouchPoints || 0 : 0,
+            pointerCoarse:
+                hasWindow && window.matchMedia
+                    ? window.matchMedia("(pointer: coarse)").matches
+                    : false,
+            hoverNone:
+                hasWindow && window.matchMedia
+                    ? window.matchMedia("(hover: none)").matches
+                    : false,
+        },
+        ua, // for debugging
     };
 
-    // --- Platform detection ---
-    if (navigator.userAgentData && navigator.userAgentData.platform) {
-        info.platform = navigator.userAgentData.platform.toLowerCase();
-        if ("mobile" in navigator.userAgentData) {
-            info.isMobile = navigator.userAgentData.mobile;
-        }
-    } else {
-        if (/windows/.test(ua)) info.platform = "windows";
-        else if (/mac/.test(ua)) info.platform = "mac";
-        else if (/linux/.test(ua)) info.platform = "linux";
-        else if (/iphone|ipad|ipod/.test(ua)) {
-            info.platform = "ios";
-            info.isMobile = true;
-        } else if (/android/.test(ua)) {
-            info.platform = "android";
-            info.isMobile = true;
-        }
-    }
+    // --- Platform detection (handle iPadOS masquerading as Mac) ---
+    const isAndroid = /android/.test(uaLower);
+    const isiPhone = /iphone|ipod/.test(uaLower);
+    const isIPadTrue =
+        /ipad/.test(uaLower) || (/(macintosh|mac os x)/.test(uaLower) && (navigator.maxTouchPoints || 0) > 1);
+
+    if (uaData?.platform) {
+        info.platform = uaData.platform.toLowerCase();
+    } else if (isAndroid) info.platform = "android";
+    else if (isiPhone) info.platform = "ios";
+    else if (isIPadTrue) info.platform = "ipados";
+    else if (/windows/.test(uaLower)) info.platform = "windows";
+    else if (/mac|macintosh/.test(uaLower)) info.platform = "mac";
+    else if (/linux/.test(uaLower)) info.platform = "linux";
 
     // --- Browser detection ---
-    if (/edg/.test(ua)) info.browser = "edge";
-    else if (/chrome|crios/.test(ua)) info.browser = "chrome";
-    else if (/safari/.test(ua) && !/chrome|crios/.test(ua)) info.browser = "safari";
-    else if (/firefox|fxios/.test(ua)) info.browser = "firefox";
-    else if (/msie|trident/.test(ua)) info.browser = "internet explorer";
+    if (/edg\//.test(uaLower)) info.browser = "edge";
+    else if (/opr\//.test(uaLower)) info.browser = "opera";
+    else if (/chrome|crios/.test(uaLower)) info.browser = "chrome";
+    else if (/firefox|fxios/.test(uaLower)) info.browser = "firefox";
+    else if (/safari/.test(uaLower) && !/chrome|crios|edg\//.test(uaLower)) info.browser = "safari";
+    else if (/msie|trident/.test(uaLower)) info.browser = "internet explorer";
+
+    // --- Mobile / Tablet heuristics ---
+    // 1) Strongest signal: UA-CH mobile (Chromium only)
+    if (uaData && "mobile" in uaData) {
+        info.isMobile = !!uaData.mobile;
+    } else {
+        // 2) UA token for phones (avoid counting iPad here)
+        const hasMobileToken = /mobi|iphone|ipod|android/.test(uaLower);
+
+        // 3) Touch + coarse pointer (tablets/phones), and a size hint
+        const minViewport =
+            hasWindow ? Math.min(window.innerWidth, window.innerHeight) : Infinity;
+        const minScreen =
+            hasWindow && window.screen
+                ? Math.min(window.screen.width, window.screen.height)
+                : Infinity;
+
+        const viewportLooksSmall = minViewport <= 812 || minScreen <= 812; // ~phone-ish
+        const touchLikeMobile =
+            info.touch.pointerCoarse || info.touch.maxTouchPoints > 1 || info.touch.hoverNone;
+
+        // Consider iPad/tablets separately
+        const isTablet =
+            isIPadTrue ||
+            (isAndroid && !/mobile/.test(uaLower) && touchLikeMobile && !viewportLooksSmall);
+
+        info.isTablet = !!isTablet;
+        info.isMobile =
+            hasMobileToken ||
+            isIPadTrue || // treat iPad as mobile for your use-case; flip if you want tablet separate
+            (touchLikeMobile && (viewportLooksSmall || /android/.test(uaLower)));
+    }
 
     return info;
 }

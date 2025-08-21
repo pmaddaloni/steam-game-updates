@@ -24,7 +24,6 @@ $menu-side-padding: 20px;
     div:first-child {
         align-content: space-around;
         display: flex;
-        padding-left: $menu-side-padding;
 
         .header-img {
             width: 40px;
@@ -134,6 +133,7 @@ $menu-side-padding: 20px;
             align-self: flex-start;
             font-size: larger;
             margin-left: 4px;
+            padding-right: 4px;
         }
 
         @-moz-document url-prefix() {
@@ -152,7 +152,7 @@ $menu-side-padding: 20px;
         &:hover,
         &.active {
             cursor: pointer;
-            box-shadow: -2px 0px 8px 5px #5fb4f0;
+            box-shadow: inset -2px 0px 4px 0.1px #5fb4f0, -2px 0px 8px 5px #5fb4f0;
         }
     }
 
@@ -164,7 +164,7 @@ $menu-side-padding: 20px;
         display: flex;
         align-items: center;
         height: fit-content;
-        padding-right: $menu-side-padding;
+        margin-right: $menu-side-padding;
 
         img {
             margin-right: 7px;
@@ -172,7 +172,7 @@ $menu-side-padding: 20px;
         }
 
         &.menu {
-            border-radius: 15px;
+            border-radius: 15px 4px 4px 15px;
         }
     }
 

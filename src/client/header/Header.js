@@ -320,8 +320,8 @@ export default function Header() {
 
     return (
         <>
-            <div className={styles.header}>
-                <div>
+            <div className={styles.header} style={isMobile ? { justifyContent: 'center' } : null}>
+                <div style={{ paddingLeft: isMobile ? 0 : '20px' }}>
                     <img className={styles['header-img']} src={steamGameUpdatesImg} alt="steam game updates logo" />
                     <div>Steam Game Updates</div>
                 </div>
@@ -509,7 +509,7 @@ export default function Header() {
                             </ul>
                         )}
                     >
-                        {isMobile ? <></> :
+                        {isMobile ? <div /> :
                             <div className={classNames(interactionDisabled ? styles['menu-disabled'] : null, isPopoverOpen ? styles.active : null, styles.menu)} onClick={() => shouldShowPopup(!isPopoverOpen)}>
                                 <img src={photos[0]?.value} alt='user-avatar' />
                                 <div className={styles.user} >{displayName}</div>

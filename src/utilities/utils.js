@@ -5,7 +5,7 @@ export const SUBSCRIPTION_IOS_ID_SUFFIX = ' - ios';
 
 export function getClientInfo() {
     const hasWindow = typeof window !== "undefined";
-    const ua = hasWindow ? navigator.userAgent : "";
+    const ua = navigator.userAgent ?? "";
     const uaLower = ua.toLowerCase();
     const uaData = hasWindow ? navigator.userAgentData : null;
 

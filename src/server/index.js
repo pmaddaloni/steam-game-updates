@@ -130,8 +130,6 @@ passport.use(new SteamStrategy({
     });
 }));
 
-const DAILY_LIMIT = 250000;
-const RETRY_WAIT_TIME = 5 * 60 * 1000;      // Time in minutes
 const REQUEST_WAIT_TIME = 500;              // 864 would keep within 100k a day, but it appears there is no limit on updates
 const NUMBER_OF_REQUESTS_PER_WAIT_TIME = 1; // Number of requests to allow per REQUEST_WAIT_TIME
 
@@ -178,32 +176,84 @@ const app = express();
 app.locals.requestQueue = new PQueue({ interval: REQUEST_WAIT_TIME, intervalCap: NUMBER_OF_REQUESTS_PER_WAIT_TIME });
 app.locals.appidsToCheckPriorityQueue = new PriorityQueue();
 
-function makeRequest(url, method = 'get') {
-    return () => axiosInstance[method](url);
-};
+let backoffTime = 1000; // start with 1s
+const maxBackoff = 1000 * 60 * 60; // max 1 hour
+let rateLimited = false;
+let backoffTimer = null;
 
-// https://stackoverflow.com/questions/33030092/webworkers-with-a-node-js-express-application
+function makeRequest(url, method = "get") {
+    return async () => {
+        if (rateLimited) {
+            throw new Error("Rate limited, dropping request");
+        }
+
+        try {
+            const res = await axiosInstance[method](url);
+            // On success, reset backoff
+            backoffTime = 1000;
+            return res;
+        } catch (err) {
+            const status = err.response?.status;
+            let waitTime = backoffTime;
+
+            if (!status || /^(401|403|405|406|408|429)$/.test(String(status))) {
+                console.log(`${status} received, backing off ${waitTime}ms`);
+
+                // Use Retry-After header if available for 429
+                if (status === 429 && err.response?.headers["retry-after"]) {
+                    const retryAfterSec = parseInt(err.response.headers["retry-after"], 10);
+                    if (!isNaN(retryAfterSec)) {
+                        waitTime = retryAfterSec * 1000;
+                    }
+                }
+
+                // Apply small random jitter ±10%
+                const jitter = waitTime * 0.1;
+                const jitteredWait = waitTime + (Math.random() * jitter * 2 - jitter);
+
+                rateLimited = true;
+                clearTimeout(backoffTimer);
+
+                backoffTimer = setTimeout(() => {
+                    rateLimited = false;
+                    // Exponentially increase backoff for next 429
+                    backoffTime = Math.min(backoffTime * 2, maxBackoff);
+                }, jitteredWait);
+            }
+            throw err;
+        }
+    };
+}
+
 async function getAllSteamGameNames() {
-    return app.locals.requestQueue.add(
-        makeRequest('https://api.steampowered.com/ISteamApps/GetAppList/v0002/')
-    ).then((result) => {
-        // disregard apps without a name
-        let games = result.data.applist.apps.filter(app => app.name !== '');//.sort((a, b) => a.appid - b.appid);
-        const gameNamesDict = games.reduce((acc, game) => {
-            acc[game.appid] = game.name;
-            return acc;
-        }, {});
-        // Remove appid duplicates that can be present in the returned list
-        // This isn't ideal, but it appears to be the most efficient way to do this, and is pretty fast.
-        games = Array.from(new Set(games.map(a => a.appid)));
-        games = games.map((appid) => ({
-            appid,
-        }));
-        console.log(`Server has retrieved ${games.length} games`);
-        return { gameAppidsArray: games, gameNamesDict };
-    }).catch(err => {
+    try {
+        const result = await app.locals.requestQueue.add(
+            makeRequest('https://api.steampowered.com/ISteamApps/GetAppList/v0002/')
+        );
+
+        if (!result) {
+            console.log('Request was dropped due to rate limiting.');
+            return { gameAppidsArray: [], gameNamesDict: {} };
+        }
+
+        const apps = result.data.applist.apps;
+        const gameNamesDict = {};
+        const gameAppidsSet = new Set();
+
+        for (const app of apps) {
+            if (!app.name) continue; // skip apps with no name
+            gameNamesDict[app.appid] = app.name;
+            gameAppidsSet.add(app.appid);
+        }
+
+        const gameAppidsArray = Array.from(gameAppidsSet, (appid) => ({ appid }));
+
+        console.log(`Server has retrieved ${gameAppidsArray.length} games`);
+        return { gameAppidsArray, gameNamesDict };
+    } catch (err) {
         console.error('Retrieving all games from Steam API failed.', err);
-    })
+        return { gameAppidsArray: [], gameNamesDict: {} };
+    }
 }
 
 const { gameAppidsArray, gameNamesDict } = await getAllSteamGameNames();
@@ -220,9 +270,8 @@ const objectWithSets = Object.entries(parsedUserOwnedGames).reduce((acc, [key, v
     return acc;
 }, {});
 app.locals.gamesWithSubscriptions = objectWithSets;
-app.locals.waitBeforeRetrying = false;
 const [lastStartTime, lastDailyLimitUsage = 0] = JSON.parse(serverRefreshTimeAndCount);
-app.locals.dailyLimit = DAILY_LIMIT - lastDailyLimitUsage;
+app.locals.dailyRequestCount = lastDailyLimitUsage;
 app.locals.lastServerRefreshTime = lastStartTime ?? new Date().getTime();
 // Since passport isn't properly tracking mobile sessions, we need to track them ourselves.
 // We generate our own UUIDs to check against for the mobile app.
@@ -313,7 +362,7 @@ async function sendIndividualNotifications({ appid, name, eventTitle, eventType 
 // End OneSignal client configuration
 
 // Spin up SteamWebPipes server
-const MEMORY_LIMIT_MB = 100;
+const MEMORY_LIMIT_MB = 200;
 const MEMORY_LIMIT_BYTES = MEMORY_LIMIT_MB * 1024 * 1024;
 const MONITOR_INTERVAL_MS = 30000; // Check every 30 seconds
 
@@ -334,10 +383,11 @@ function initializeSteamWebPipes() {
             const appids = Object.keys(apps);
             for (const appid of appids) {
                 app.locals.allSteamGamesUpdatesPossiblyChanged[appid] = Math.floor(Date.now() / 1000); // convert to seconds
-                // If at least one subscribed user owns the game, we should check it.
-                if (app.locals.gamesWithSubscriptions[appid]?.size > 0) {
-                    console.log(`Game ${appid} has updates, checking for changes if a user owns it...`, !!app.locals.gamesWithSubscriptions[appid]);
-                    app.locals.appidsToCheckPriorityQueue.enqueue(appid, app.locals.allSteamGamesUpdatesPossiblyChanged[appid]);
+                // If at least one subscribed user owns the game, we should check it
+                // OR if we are rate limited, we should check the games reporting as updated sooner rather than later.
+                if (app.locals.gamesWithSubscriptions[appid]?.size > 0 || rateLimited) {
+                    const priority = rateLimited ? 1 : app.locals.allSteamGamesUpdatesPossiblyChanged[appid];
+                    app.locals.appidsToCheckPriorityQueue.enqueue(appid, priority);
                 }
             }
         },
@@ -490,7 +540,6 @@ async function getAppidUpdates(
     if (appid == null) {
         return {
             status: 500,
-            retryAfter: -1,
         };
     }
     try {
@@ -505,25 +554,8 @@ async function getAppidUpdates(
             );
         result = response.data;
     } catch (err) {
-        console.error(`Getting the game ${appid}'s updates failed.`, err.message, '\n', err.response?.status, '\n', err.response?.data,);
-        let resultRetryAfter = err.response?.headers?.['retry-after'];
-        if (resultRetryAfter) {
-            resultRetryAfter = parseInt(resultRetryAfter, 10);
-        }
-        if (err.response?.status === 429) {
-            if (resultRetryAfter) {
-                const retryAfter = resultRetryAfter ?? 5 * 60; // Default to 5 minutes if no Retry-After header is found
-                result = {
-                    status: 429,
-                    retryAfter
-                }
-            }
-        } else if (err.response?.status === 403) {
-            result = {
-                status: 403,
-                retryAfter: resultRetryAfter
-            }
-        } else if (err.response?.data.eresult === 42 &&
+        console.error(`Getting the game ${appid}'s updates failed.`, err.message);
+        if (err.response?.data.eresult === 42 &&
             (includeCountBefore || includeCountAfter)) {
             const shouldIncludeCountBefore = (!includeCountBefore || includeCountAfter) &&
                 !(includeCountBefore && includeCountAfter);
@@ -545,14 +577,13 @@ async function getAppidUpdates(
             // Something went wrong other than rate limiting
             result = {
                 status: err.response?.status,
-                retryAfter: -1,
             }
         }
     }
     return result;
 }
 
-console.log(`Server last refreshed on ${new Date(app.locals.lastServerRefreshTime)} with ${app.locals.dailyLimit} requests left`);
+console.log(`Server last refreshed on ${new Date(app.locals.lastServerRefreshTime)} having completed ${app.locals.dailyRequestCount} requests.`);
 
 // https://steamcommunity.com/dev/apiterms#:~:text=any%20Steam%20game.-,You%20may%20not%20use%20the%20Steam%20Web%20API%20or%20Steam,Steam%20Web%20API%20per%20day.
 // Reset the daily limit every 24 hours
@@ -573,7 +604,7 @@ function getNextMidnight() {
 }
 function scheduleDailyReset() {
     setTimeout(() => {
-        app.locals.dailyLimit = DAILY_LIMIT;
+        app.locals.dailyRequestCount = 0;
         app.locals.lastServerRefreshTime = Date.now();
         console.log("Daily reset at midnight");
 
@@ -583,7 +614,7 @@ function scheduleDailyReset() {
 }
 scheduleDailyReset();
 
-// Log out all users every 2 days.
+// Log out users after 2 days.
 // Maybe make this longer in the future.
 function scheduleExpiry(sessionID, session) {
     const now = Date.now();
@@ -630,16 +661,13 @@ setInterval(() => {
 // At this point it's not cleared/guaranteed that the games will always come back in the
 // same order, but it appears to be the case, at least for now.
 setInterval(async () => {
-    console.log('Refreshing all games');
-    if (app.locals.dailyLimit > 0 && app.locals.waitBeforeRetrying === false) {
+    console.log('Refreshing all Steam games');
+    if (rateLimited === false) {
         getAllSteamGameNames().then(({ gameAppidsArray, gameNamesDict }) => {
-            app.locals.dailyLimit--;
+            app.locals.dailyRequestCount++;
             if (gameAppidsArray) {
                 app.locals.allSteamGames = gameAppidsArray;
                 app.locals.allSteamGameNames = gameNamesDict;
-            } else {
-                app.locals.waitBeforeRetrying = true;
-                setTimeout(() => app.locals.waitBeforeRetrying = false, RETRY_WAIT_TIME);
             }
         });
     }
@@ -683,8 +711,7 @@ function scheduleNotification({ appid, name, eventTitle, eventType, eventTime })
 }
 
 const getGameUpdates = async (externalAppid) => {
-    if (app.locals.dailyLimit > 0
-        && app.locals.waitBeforeRetrying === false) {
+    if (rateLimited === false) {
 
         const priorityAppid = app.locals.appidsToCheckPriorityQueue.dequeue();
         if (externalAppid != null) {
@@ -707,7 +734,7 @@ const getGameUpdates = async (externalAppid) => {
         } else {
             //  If a user has requested a specific appid we need to process it asap.
             const result = await getAppidUpdates(appid, !!externalAppid);
-            app.locals.dailyLimit--;
+            app.locals.dailyRequestCount++;
 
             if (result.success === 1) {
                 // Only increment the index if this was not a manual request.
@@ -728,7 +755,6 @@ const getGameUpdates = async (externalAppid) => {
                     `\n   Previous known event time: ${new Date(mostRecentPreviouslyKnownEventTime).toLocaleString()}` +
                     `\n   Newer than previous? ${mostRecentPreviouslyKnownEventTime < mostRecentEventTime}`
                 );
-
                 // Since we just got the most recent updates, this can be set to that event's post time.
                 app.locals.allSteamGamesUpdatesPossiblyChanged[appid] =
                     Math.max(mostRecentEventTime, mostRecentPreviouslyKnownEventTime);
@@ -753,19 +779,7 @@ const getGameUpdates = async (externalAppid) => {
                         });
                     }
                 }
-                console.log(`Getting the game ${appid}'s updates completed with ${mostRecentEvents.length ?? 0} event(s), with ${DAILY_LIMIT - app.locals.dailyLimit} requests so far.`);
-            } else if (result.status === 429 || result.status === 403) {
-                if (result.status === 429 || result.retryAfter != null) {
-                    app.locals.waitBeforeRetrying = true;
-                    setTimeout(() => app.locals.waitBeforeRetrying = false, result.retryAfter != null ? result.retryAfter * 1000 : RETRY_WAIT_TIME);
-                } else {
-                    //  Steam is refusing requests and hasn't given a retry time, so let's backoff for the rest of the day.
-                    app.locals.dailyLimit = 0; // Stop processing any more requests for the day.
-                }
-                console.log(`${result.status === 403 ?
-                    'Steam API is refusing' : 'Steam API rate limit reached'};
-                    ${result.retryAfter != null ? `retrying after: ${result.retryAfter} seconds.` : 'retrying again tomorrow'}
-                `);
+                console.log(`Getting the game ${appid}'s updates completed with ${mostRecentEvents.length ?? 0} event(s), with ${app.locals.dailyRequestCount} requests so far today.`);
             } else {
                 // This appid has not been found for whatever reason, so don't try it again.
                 app.locals.appidsWithErrors.add(appid);
@@ -775,11 +789,6 @@ const getGameUpdates = async (externalAppid) => {
                 }
             }
         }
-    }
-
-    if (app.locals.dailyLimit === 0) {
-        app.locals.dailyLimit = -1; // Prevent message below from printing over and over.
-        console.log(`Daily limit reached at ${new Date()}. Waiting for the next day to continue.`);
     }
 }
 
@@ -794,12 +803,7 @@ setInterval(getGameUpdates, REQUEST_WAIT_TIME);
 setInterval(async () => {
     // We may as well stop saving the files if the daily limit is 0 so we don't keep writing
     // the same data over and over again.
-    if (app.locals.dailyLimit > -2 && fileWriterProcess == null) {
-        // Save once after the daily limit is reached, then stop.
-        if (app.locals.dailyLimit === -1) {
-            app.locals.dailyLimit = -2;
-        }
-
+    if (fileWriterProcess == null) {
         const fileWriterSend = initializeFileWriterProcess(); // Initialize the child process on server start
         try {
             await fileWriterSend({
@@ -829,7 +833,7 @@ setInterval(async () => {
                 type: 'writeFile',
                 payload: {
                     filename: './storage/serverRefreshTimeAndCount.json',
-                    data: [app.locals.lastServerRefreshTime, app.locals.dailyLimit],
+                    data: [app.locals.lastServerRefreshTime, app.locals.dailyRequestCount],
                 }
             });
             await fileWriterSend({
@@ -942,7 +946,7 @@ app.get('/api/user', ensureAuthenticated, (req, res) => {
 });
 
 app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
-    if (req.app.locals.waitBeforeRetrying === false && req.app.locals.dailyLimit > 0) {
+    if (rateLimited === false) {
         const userID = req.query.id || req.user?.id;
         if (!userID) {
             return res.status(400).send(new Error('No user ID provided'));
@@ -960,20 +964,12 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
             console.log(`Cache miss for user ${userID}, hitting Steam API...`);
 
             // If not cached, hit Steam API (through your queue)
-            let result = '';
             //  If a user has requested their games we need to process it asap.
-            await app.locals.requestQueue.add(
+            const result = await app.locals.requestQueue.add(
                 makeRequest(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${config.STEAM_API_KEY}&steamid=${userID}&include_appinfo=true&skip_unvetted_apps=false`),
                 { priority: 3 }   // Prioritize this request above all others
-            )
-                .then(response => { result = response })
-                .catch(err => {
-                    console.error(`\nGetting the user ${req.query.id}'s owned games FAILED with code "${err.response?.status}"`
-                        + ` and message "${err.response?.statusText} (no code means the server didn't responsd).\n`, err);
-                    app.locals.waitBeforeRetrying = true;
-                    setTimeout(() => app.locals.waitBeforeRetrying = false, err.response?.retryAfter != null ? err.response?.retryAfter * 1000 : RETRY_WAIT_TIME);
-                });
-            app.locals.dailyLimit--;
+            );
+            app.locals.dailyRequestCount++;
 
             // Save response to Redis for 2 minutes (120s)
             if (result?.data?.response) {
@@ -983,15 +979,12 @@ app.get('/api/owned-games', ensureAuthenticated, async (req, res) => {
             console.log(`Getting the user ${req.query.id}'s owned games completed with ${result.data?.response?.game_count ?? 'no'} games`);
             res.send(result.data?.response);
         } catch (err) {
-            console.error("Error in /api/owned-games:", err);
+            console.error(`\nGetting the user ${req.query.id}'s owned games FAILED with code "${err.response?.status}"`
+                + ` and message "${err.response?.statusText} (no code means the server didn't responsd).\n`, err);
             res.status(500).json({ error: "Internal server error" });
         }
     } else {
-        res.status(429).json({
-            error: `The limit for requests has been reached`,
-            waitBeforeRetrying: req.app.locals.waitBeforeRetrying,
-            dailyLimit: req.app.locals.dailyLimit,
-        });
+        res.status(429).json({ error: `Cannot get owned games at the moment.` });
     }
 });
 
@@ -1151,16 +1144,20 @@ app.get('/api/beta/game-updates-for-owned-games', ensureAuthenticated, async (re
 });
 
 app.get('/api/game-details', ensureAuthenticated, async (req, res) => {
-    if (req.app.locals.waitBeforeRetrying === false && req.app.locals.dailyLimit > 0) {
+    if (rateLimited === false) {
         let result = null;
         const appid = req.query.appid;
         if (app.locals.steamGameDetails[appid] == null) {
-            await app.locals.requestQueue.add(
-                makeRequest(`https://store.steampowered.com/api/appdetails?appids=${appid}`),
-                { priority: 1000 }   // Make sure this request is processed immediately
-            )
-                .then(response => result = response?.data)
-                .catch(err => console.error(`Getting the game ${appid}'s details failed.`, err));
+            try {
+                const response = await app.locals.requestQueue.add(
+                    makeRequest(`https://store.steampowered.com/api/appdetails?appids=${appid}`),
+                    { priority: 1000 }
+                );
+                result = response?.data;
+            } catch (err) {
+                console.error(`Getting the game ${appid}'s details failed.`, err);
+                return res.status(500).send({ error: "Failed to fetch game details" });
+            }
             // Since we bothered to get this game's details, let's hold on to them...
             const { name, header_image, capsule_image, capsule_imagev5 } = result?.[appid]?.data ?? {};
             app.locals.steamGameDetails[appid] = {
@@ -1171,9 +1168,9 @@ app.get('/api/game-details', ensureAuthenticated, async (req, res) => {
             };
         }
         res.send(app.locals.steamGameDetails[appid]);
-        app.locals.dailyLimit--;
+        app.locals.dailyRequestCount++;
     } else {
-        const errMsg = `The limit for requests has been reached: retry later ${req.app.locals.waitBeforeRetrying}, daily limit ${req.app.locals.dailyLimit}`;
+        const errMsg = `Cannot request game details at the moment.`;
         console.error(errMsg)
         res.status(400).send(new Error(errMsg));
     }

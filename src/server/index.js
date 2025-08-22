@@ -88,6 +88,19 @@ const getSingleRedisValue = async (field, key = 'allSteamGamesUpdates') => {
     }
 };
 
+async function logUserLogin(userId) {
+    await redisClient.hIncrBy('userLoginCounts', userId, 1);
+}
+
+async function getAllUserLoginCounts() {
+    const counts = await redisClient.hGetAll('userLoginCounts');
+    // Redis returns string values, convert to numbers
+    for (const user in counts) {
+        counts[user] = parseInt(counts[user], 10);
+    }
+    return counts;
+}
+
 await redisClient.connect();
 // Passport session setup.
 //   To support persistent login sessions, Passport needs to be able to
@@ -1247,12 +1260,14 @@ app.get('/api/auth/steam/return',
     function (req, res) {
         const redirect_uri = req.user?.redirect_uri;
         const state = req.user?.state;
+        logUserLogin(req.user.id);
+
         if (redirect_uri && state) {
             delete req.user.redirect_uri;
             delete req.user.state;
-            const user = encodeURIComponent(JSON.stringify(req.user))
             const sessionID = uuidv4().toString();
-            addSession(sessionID, { id: user.id });
+            addSession(sessionID, { id: req.user.id });
+            const user = encodeURIComponent(JSON.stringify(req.user));
             res.redirect(`${redirect_uri}?user=${user}&state=${state}&sessionID=${sessionID}`);
         } else {
             res.redirect('/close');

@@ -209,7 +209,7 @@ function makeRequest(url, method = "get") {
             const status = err.response?.status;
             let waitTime = backoffTime;
 
-            if (!status || /^(401|403|405|406|408|429)$/.test(String(status))) {
+            if (/^(401|403|405|406|408|429)$/.test(String(status))) {
                 console.log(`${status} received, backing off ${waitTime}ms`);
 
                 // Use Retry-After header if available for 429
@@ -738,11 +738,11 @@ const getGameUpdates = async (externalAppid) => {
 
         if (appid == null) {
             app.locals.appidsToCheckIndex = 0; // Loop back to the beginning
-            appid = app.locals.allSteamGames[0].appid;
+            appid = app.locals.allSteamGames[0]?.appid;
         }
 
         // Skip the appid if it has already been checked and failed, and this wasn't a manual request.
-        if (app.locals.appidsWithErrors.has(appid) && !externalAppid && !priorityAppid) {
+        if (!appid || (app.locals.appidsWithErrors.has(appid) && !externalAppid && !priorityAppid)) {
             app.locals.appidsToCheckIndex++;
         } else {
             //  If a user has requested a specific appid we need to process it asap.
